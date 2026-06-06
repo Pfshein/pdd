@@ -80,6 +80,54 @@ def test_docker_network_create_argv(monkeypatch):
     ]
 
 
+def test_docker_run_argv_has_init_and_optional_name(tmp_path):
+    base = sandbox.docker_run_argv(["qwen"], tmp_path)
+    assert "--init" in base
+    assert "--name" not in base
+
+    named = sandbox.docker_run_argv(["qwen"], tmp_path, name="pdd-abc123")
+    assert named[named.index("--name") + 1] == "pdd-abc123"
+
+
+def test_run_in_sandbox_force_removes_container_on_timeout(tmp_path, monkeypatch):
+    from orchestrator import runner
+
+    monkeypatch.setattr(runner, "stage_env", lambda: {})
+    monkeypatch.setattr(
+        runner, "run_process",
+        lambda argv, **kw: {"exit_code": None, "stdout": "", "stderr": "", "timed_out": True},
+    )
+    calls = []
+    monkeypatch.setattr(
+        sandbox.subprocess, "run",
+        lambda cmd, **kw: calls.append(cmd) or subprocess.CompletedProcess(cmd, 0, "", ""),
+    )
+
+    res = sandbox.run_in_sandbox(["sh", "-lc", "sleep 100"], tmp_path)
+
+    assert res["timed_out"] is True
+    assert res["container"].startswith("pdd-")
+    assert any(c[:2] == ["docker", "kill"] for c in calls)
+    assert any(c[:3] == ["docker", "rm", "-f"] for c in calls)
+
+
+def test_run_in_sandbox_no_teardown_on_success(tmp_path, monkeypatch):
+    from orchestrator import runner
+
+    monkeypatch.setattr(runner, "stage_env", lambda: {})
+    monkeypatch.setattr(
+        runner, "run_process",
+        lambda argv, **kw: {"exit_code": 0, "stdout": "ok", "stderr": "", "timed_out": False},
+    )
+    calls = []
+    monkeypatch.setattr(sandbox.subprocess, "run", lambda cmd, **kw: calls.append(cmd))
+
+    res = sandbox.run_in_sandbox(["sh"], tmp_path)
+
+    assert res["timed_out"] is False
+    assert calls == []  # --rm handles cleanup; no force-remove on success
+
+
 def test_unsandboxed_test_run_writes_security_artifact(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
     monkeypatch.setattr(sandbox, "ensure_ready", lambda: "UNSANDBOXED")
