@@ -137,19 +137,53 @@ def cmd_sandbox_build(args) -> int:
 
 
 def cmd_sandbox_network(args) -> int:
-    from subprocess import run
-
-    inspect = sandbox.docker_network_inspect_argv(network=args.network)
-    if run(inspect, capture_output=True).returncode == 0:
-        print(f"sandbox network already exists: {args.network or config.SANDBOX_NETWORK}")
+    net = args.network or config.SANDBOX_NETWORK
+    internal = sandbox.network_is_internal(net)
+    if internal is True:
+        print(f"sandbox network already exists and is internal: {net}")
         return 0
-    argv = sandbox.docker_network_create_argv(network=args.network)
-    return _run_command(argv)
+    if internal is False:
+        print(
+            f"REFUSING: network '{net}' exists but is NOT internal (free egress).\n"
+            f"Recreate it as internal:\n"
+            f"  docker network rm {net}\n"
+            f"  python -m orchestrator.cli sandbox-network",
+            file=sys.stderr,
+        )
+        return 2
+    return _run_command(sandbox.docker_network_create_argv(network=args.network))
 
 
 def cmd_sandbox_smoke(args) -> int:
     argv = sandbox.docker_smoke_argv(args.worktree, network=args.network)
     return _run_command(argv)
+
+
+def cmd_proxy_up(args) -> int:
+    conf = sandbox.write_squid_conf()
+    print(f"squid conf ({len(config.model_host_allowlist())} allowed host(s)): {conf}")
+    rc = _run_command(sandbox.proxy_run_argv())
+    if rc != 0:
+        return rc
+    # Give the proxy egress so it can actually reach the allowlisted host.
+    return _run_command(sandbox.proxy_connect_external_argv())
+
+
+def cmd_proxy_status(args) -> int:
+    return _run_command(sandbox.proxy_status_argv())
+
+
+def cmd_proxy_smoke(args) -> int:
+    hosts = config.model_host_allowlist()
+    if not hosts:
+        print("no allowlist host configured (set OPENAI_BASE_URL or PDD_MODEL_HOST_ALLOWLIST)",
+              file=sys.stderr)
+        return 2
+    print(f"-- allowed host {hosts[0]} (expect an HTTP code) --")
+    _run_command(sandbox.proxy_smoke_argv(hosts[0], allowed=True))
+    print("\n-- denied host example.com (expect proxy denial / non-2xx) --")
+    _run_command(sandbox.proxy_smoke_argv("example.com", allowed=False))
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -198,6 +232,15 @@ def build_parser() -> argparse.ArgumentParser:
     smoke_p.add_argument("worktree", help="writable directory mounted as /work")
     smoke_p.add_argument("--network", default=None, help=f"default: {config.SANDBOX_NETWORK}")
     smoke_p.set_defaults(func=cmd_sandbox_smoke)
+
+    proxy_up_p = sub.add_parser("proxy-up", help="start the egress allowlist proxy")
+    proxy_up_p.set_defaults(func=cmd_proxy_up)
+
+    proxy_status_p = sub.add_parser("proxy-status", help="show the proxy container status")
+    proxy_status_p.set_defaults(func=cmd_proxy_status)
+
+    proxy_smoke_p = sub.add_parser("proxy-smoke", help="check allowed vs denied egress via proxy")
+    proxy_smoke_p.set_defaults(func=cmd_proxy_smoke)
     return p
 
 

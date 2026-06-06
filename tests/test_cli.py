@@ -1,7 +1,7 @@
 """CLI inspection commands for the user-facing job flow."""
 import json
 
-from orchestrator import cli, config, state as state_mod
+from orchestrator import cli, config, sandbox, state as state_mod
 
 
 def test_status_prints_job_summary(tmp_path, monkeypatch, capsys):
@@ -51,3 +51,31 @@ def test_sandbox_build_cli_invokes_docker_build(monkeypatch):
 
     assert calls
     assert calls[0][:4] == ["docker", "build", "-t", "pdd-test:latest"]
+
+
+def test_sandbox_network_creates_internal_when_absent(monkeypatch):
+    calls = []
+    monkeypatch.setattr(sandbox, "network_is_internal", lambda net=None: None)  # absent
+    monkeypatch.setattr(cli, "_run_command", lambda argv: calls.append(argv) or 0)
+
+    assert cli.main(["sandbox-network"]) == 0
+    assert calls and "--internal" in calls[0]
+
+
+def test_sandbox_network_refuses_non_internal(monkeypatch, capsys):
+    monkeypatch.setattr(sandbox, "network_is_internal", lambda net=None: False)  # exists, free egress
+
+    assert cli.main(["sandbox-network"]) == 2
+    assert "NOT internal" in capsys.readouterr().err
+
+
+def test_proxy_up_renders_conf_and_starts_proxy(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "SANDBOX_PROXY_CONF", tmp_path / "squid.conf")
+    monkeypatch.setattr(config, "model_host_allowlist", lambda: ["opencode.ai"])
+    calls = []
+    monkeypatch.setattr(cli, "_run_command", lambda argv: calls.append(argv) or 0)
+
+    assert cli.main(["proxy-up"]) == 0
+    assert (tmp_path / "squid.conf").exists()
+    assert any(c[:3] == ["docker", "run", "-d"] for c in calls)
+    assert any(c[:4] == ["docker", "network", "connect", "bridge"] for c in calls)

@@ -5,6 +5,7 @@ Plain data + tiny helpers. No classes.
 import os
 import tempfile
 from pathlib import Path
+from urllib.parse import urlparse
 
 # --- Paths ----------------------------------------------------------------
 ROOT = Path(__file__).resolve().parent.parent
@@ -60,12 +61,37 @@ STAGE_WALL_TIME = {
 REQUIRE_SANDBOX = os.environ.get("PDD_REQUIRE_SANDBOX", "1") == "1"
 ALLOW_UNSANDBOXED = os.environ.get("PDD_ALLOW_UNSANDBOXED") == "1"
 SANDBOX_IMAGE = os.environ.get("PDD_SANDBOX_IMAGE", "pdd-sandbox:latest")
-SANDBOX_NETWORK = os.environ.get("PDD_SANDBOX_NETWORK", "pdd-egress")
+# Agent containers join this INTERNAL network (no direct route to the internet).
+# Their only way out is the allowlist proxy below.
+SANDBOX_NETWORK = os.environ.get("PDD_SANDBOX_NETWORK", "pdd-internal")
+# The proxy also attaches here to actually reach the allowlisted model host.
+SANDBOX_EXTERNAL_NETWORK = os.environ.get("PDD_SANDBOX_EXTERNAL_NETWORK", "bridge")
 SANDBOX_PIDS_LIMIT = int(os.environ.get("PDD_SANDBOX_PIDS", "512"))
 SANDBOX_MEMORY = os.environ.get("PDD_SANDBOX_MEMORY", "2g")
 SANDBOX_CPUS = os.environ.get("PDD_SANDBOX_CPUS", "2")
-# HTTPS proxy reachable from SANDBOX_NETWORK; the egress allowlist lives there.
-SANDBOX_HTTPS_PROXY = os.environ.get("PDD_SANDBOX_HTTPS_PROXY", "")
+
+# --- Egress allowlist proxy ----------------------------------------------
+# Agents have NO direct egress; they reach ONLY the model endpoint, via a squid
+# sidecar that allowlists the model host(s). The agent container gets HTTPS_PROXY.
+SANDBOX_PROXY_NAME = os.environ.get("PDD_SANDBOX_PROXY_NAME", "pdd-proxy")
+SANDBOX_PROXY_IMAGE = os.environ.get("PDD_SANDBOX_PROXY_IMAGE", "ubuntu/squid:latest")
+SANDBOX_PROXY_PORT = int(os.environ.get("PDD_SANDBOX_PROXY_PORT", "3128"))
+SANDBOX_PROXY_CONF = Path(
+    os.environ.get("PDD_SANDBOX_PROXY_CONF", str(Path(tempfile.gettempdir()) / "pdd-proxy-squid.conf"))
+)
+SANDBOX_HTTPS_PROXY = os.environ.get(
+    "PDD_SANDBOX_HTTPS_PROXY", f"http://{SANDBOX_PROXY_NAME}:{SANDBOX_PROXY_PORT}"
+)
+
+
+def model_host_allowlist() -> list:
+    """Hosts the sandbox proxy may reach. Defaults to the model endpoint host."""
+    override = os.environ.get("PDD_MODEL_HOST_ALLOWLIST")
+    if override:
+        return [h.strip() for h in override.split(",") if h.strip()]
+    base = model_env().get("OPENAI_BASE_URL", "")
+    host = urlparse(base).hostname
+    return [host] if host else []
 
 
 # --- Model credentials ----------------------------------------------------

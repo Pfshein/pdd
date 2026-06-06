@@ -12,8 +12,11 @@ def run_tests(job: str, worktree, command: str | None = None) -> dict:
     mode = sandbox.ensure_ready()
 
     if mode == "docker":
+        # Tests don't call the model -> NO network at all. This is the stage most
+        # likely to execute untrusted project code (conftest/tests), so we strip
+        # its egress surface entirely.
         res = sandbox.run_in_sandbox(
-            ["sh", "-lc", command], worktree, timeout=config.TEST_TIMEOUT_S
+            ["sh", "-lc", command], worktree, timeout=config.TEST_TIMEOUT_S, network="none"
         )
         if res.get("timed_out"):
             exit_code = None
