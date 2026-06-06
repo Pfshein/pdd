@@ -44,7 +44,9 @@ JOB_TTL_S = 3600
 # --- Test command (deterministic TEST_RUN) --------------------------------
 # `python -m pytest` instead of bare `pytest`: robust when pytest.exe is not on PATH.
 TEST_COMMAND = os.environ.get("PIPELINE_TEST_COMMAND", "python -m pytest -q")
+SETUP_COMMAND = os.environ.get("PIPELINE_SETUP_COMMAND", "")
 TEST_TIMEOUT_S = 300
+SETUP_TIMEOUT_S = int(os.environ.get("PDD_SETUP_TIMEOUT_S", "600"))
 
 # --- Per-stage wall-time budgets (seconds, inner qwen guard) --------------
 STAGE_WALL_TIME = {
@@ -87,6 +89,35 @@ SANDBOX_PROXY_CONF = Path(
 SANDBOX_HTTPS_PROXY = os.environ.get(
     "PDD_SANDBOX_HTTPS_PROXY", f"http://{SANDBOX_PROXY_NAME}:{SANDBOX_PROXY_PORT}"
 )
+
+# --- Dependency setup sandbox --------------------------------------------
+# Project dependency installs are intentionally separate from TEST_RUN:
+# setup may need package-registry egress; tests run with --network none.
+SANDBOX_SETUP_NETWORK = os.environ.get("PDD_SETUP_NETWORK", SANDBOX_NETWORK)
+SANDBOX_SETUP_PROXY_NAME = os.environ.get("PDD_SETUP_PROXY_NAME", "pdd-setup-proxy")
+SANDBOX_SETUP_PROXY_CONF = Path(
+    os.environ.get(
+        "PDD_SETUP_PROXY_CONF",
+        str(Path(tempfile.gettempdir()) / "pdd-setup-proxy-squid.conf"),
+    )
+)
+SANDBOX_SETUP_HTTPS_PROXY = os.environ.get(
+    "PDD_SETUP_HTTPS_PROXY", f"http://{SANDBOX_SETUP_PROXY_NAME}:{SANDBOX_PROXY_PORT}"
+)
+
+
+def setup_host_allowlist() -> list:
+    """Hosts the dependency setup proxy may reach."""
+    override = os.environ.get("PDD_SETUP_HOST_ALLOWLIST")
+    if override:
+        return [h.strip() for h in override.split(",") if h.strip()]
+    return [
+        "pypi.org",
+        "files.pythonhosted.org",
+        "registry.npmjs.org",
+        "github.com",
+        "objects.githubusercontent.com",
+    ]
 
 
 def model_host_allowlist() -> list:

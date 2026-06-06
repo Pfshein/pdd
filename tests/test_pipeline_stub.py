@@ -56,10 +56,11 @@ def _fake_run_qwen_stage(prompt, *, cwd, json_schema=None, **kwargs):
     return _events({"type": "result", "is_error": False}, assistant_text="applied fix")
 
 
-def _fake_run_tests(job, worktree, command=None):
+def _fake_run_tests(job, worktree, command=None, setup_command=None):
     result = {
         "status": "green",
         "command": command or "stub",
+        "setup_command": setup_command,
         "exit_code": 0,
         "log_tail": "",
     }
@@ -81,6 +82,7 @@ def test_pipeline_reaches_done(tmp_path, monkeypatch):
         task_md="Fix add() to return a + b.",
         task_meta={"issue_type": "bug", "labels": [], "description_chars": 30, "estimate": 1},
         test_command="python -m pytest -q",
+        setup_command="pip install -r requirements.txt",
         keep_worktree=False,
     )
 
@@ -90,5 +92,6 @@ def test_pipeline_reaches_done(tmp_path, monkeypatch):
     job_meta = json.loads((jd / "job_meta.json").read_text(encoding="utf-8"))
     assert job_meta["branch"] == "pdd/JOB-X"
     assert job_meta["base_sha"]
+    assert job_meta["setup_command"] == "pip install -r requirements.txt"
     assert (jd / "diff.patch").read_text(encoding="utf-8").find("a + b") != -1
     assert json.loads((jd / "test_result.json").read_text(encoding="utf-8"))["status"] == "green"

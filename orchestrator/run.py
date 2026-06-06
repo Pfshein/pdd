@@ -2,7 +2,7 @@
 
 CLI:
   python -m orchestrator.run --job DEMO-1 --repo <path> \
-      --task task.md --meta meta.json [--test-command "pytest -q"]
+      --task task.md --meta meta.json [--setup-command "pip install -r requirements.txt"]
 """
 import argparse
 import json
@@ -41,7 +41,7 @@ def _reset_job_logs(job: str) -> None:
             p.unlink()
 
 
-def run_pipeline(job, repo, *, task_md, task_meta, test_command=None,
+def run_pipeline(job, repo, *, task_md, task_meta, test_command=None, setup_command=None,
                  base_ref="HEAD", keep_worktree=True) -> dict:
     _reset_job_logs(job)
     wt, branch, base_sha = worktree.create(repo, job, base_ref)
@@ -53,6 +53,7 @@ def run_pipeline(job, repo, *, task_md, task_meta, test_command=None,
         "branch": branch,
         "worktree": str(wt),
         "test_command": test_command or config.TEST_COMMAND,
+        "setup_command": setup_command if setup_command is not None else config.SETUP_COMMAND,
     })
     ctx = {
         "repo": str(repo),
@@ -60,6 +61,7 @@ def run_pipeline(job, repo, *, task_md, task_meta, test_command=None,
         "task_md": task_md,
         "task_meta": task_meta,
         "test_command": test_command or config.TEST_COMMAND,
+        "setup_command": setup_command if setup_command is not None else config.SETUP_COMMAND,
     }
     st = state_mod.new_state(job)
     final = driver.run_job(st, stages.make_run_node(ctx), persist=True)
@@ -83,6 +85,7 @@ def _ctx_from_artifacts(job: str, meta: dict) -> dict:
         "task_md": artifacts.read_text(job, "task.md"),
         "task_meta": artifacts.read_json(job, "task_meta.json", {}) or {},
         "test_command": meta.get("test_command"),
+        "setup_command": meta.get("setup_command"),
     }
 
 
@@ -126,6 +129,7 @@ def main(argv=None) -> int:
     p.add_argument("--task", required=True, help="path to task.md")
     p.add_argument("--meta", required=True, help="path to task_meta.json")
     p.add_argument("--test-command", default=None)
+    p.add_argument("--setup-command", default=None)
     p.add_argument("--base-ref", default="HEAD")
     p.add_argument("--drop-worktree", action="store_true")
     args = p.parse_args(argv)
@@ -136,7 +140,7 @@ def main(argv=None) -> int:
     final = run_pipeline(
         args.job, args.repo,
         task_md=task_md, task_meta=task_meta,
-        test_command=args.test_command, base_ref=args.base_ref,
+        test_command=args.test_command, setup_command=args.setup_command, base_ref=args.base_ref,
         keep_worktree=not args.drop_worktree,
     )
     print(f"\n=== {args.job} finished at: {final['node']} ===")

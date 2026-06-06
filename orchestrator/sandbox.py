@@ -141,6 +141,14 @@ def write_squid_conf(path=None, hosts=None) -> str:
     return str(path)
 
 
+def write_setup_squid_conf(path=None, hosts=None) -> str:
+    """Render the dependency-setup proxy config to disk."""
+    path = Path(path or config.SANDBOX_SETUP_PROXY_CONF)
+    hosts = hosts if hosts is not None else config.setup_host_allowlist()
+    path.write_text(render_squid_conf(hosts), encoding="utf-8")
+    return str(path)
+
+
 def proxy_run_argv(*, conf_path=None, name=None, network=None, image=None) -> list:
     """`docker run -d` for the squid sidecar on the internal network."""
     name = name or config.SANDBOX_PROXY_NAME
@@ -167,6 +175,22 @@ def proxy_status_argv(*, name=None) -> list:
     return ["docker", "ps", "--filter", f"name=^{name}$", "--format", "{{.Names}} {{.Status}}"]
 
 
+def setup_proxy_run_argv(*, conf_path=None) -> list:
+    return proxy_run_argv(
+        conf_path=conf_path or config.SANDBOX_SETUP_PROXY_CONF,
+        name=config.SANDBOX_SETUP_PROXY_NAME,
+        network=config.SANDBOX_SETUP_NETWORK,
+    )
+
+
+def setup_proxy_connect_external_argv() -> list:
+    return proxy_connect_external_argv(name=config.SANDBOX_SETUP_PROXY_NAME)
+
+
+def setup_proxy_status_argv() -> list:
+    return proxy_status_argv(name=config.SANDBOX_SETUP_PROXY_NAME)
+
+
 def proxy_smoke_argv(host, *, allowed: bool, network=None) -> list:
     """Curl a host THROUGH the proxy from inside the internal network.
 
@@ -191,7 +215,7 @@ def docker_smoke_argv(worktree, *, network: str | None = None) -> list:
 
 
 def docker_run_argv(container_cmd, worktree, *, env_passthrough=DEFAULT_ENV_PASSTHROUGH,
-                    network=None, extra=None, name=None):
+                    network=None, extra=None, name=None, proxy_url=None):
     """Assemble a locked-down `docker run` argv. No secret values embedded.
 
     --init reaps zombie processes inside the container. A unique --name lets the
@@ -221,10 +245,11 @@ def docker_run_argv(container_cmd, worktree, *, env_passthrough=DEFAULT_ENV_PASS
     ]
     for key in env_passthrough:
         argv += ["-e", key]  # value taken from the docker process env, not argv
-    if config.SANDBOX_HTTPS_PROXY:
+    proxy_url = config.SANDBOX_HTTPS_PROXY if proxy_url is None else proxy_url
+    if proxy_url:
         argv += [
-            "-e", f"HTTPS_PROXY={config.SANDBOX_HTTPS_PROXY}",
-            "-e", f"HTTP_PROXY={config.SANDBOX_HTTPS_PROXY}",
+            "-e", f"HTTPS_PROXY={proxy_url}",
+            "-e", f"HTTP_PROXY={proxy_url}",
         ]
     if extra:
         argv += list(extra)
@@ -243,7 +268,8 @@ def _force_remove_container(name: str) -> None:
 
 
 def run_in_sandbox(container_cmd, worktree, *, stdin=None, timeout=None,
-                   env_passthrough=DEFAULT_ENV_PASSTHROUGH, network=None) -> dict:
+                   env_passthrough=DEFAULT_ENV_PASSTHROUGH, network=None,
+                   proxy_url=None) -> dict:
     """Run container_cmd inside the sandbox container; return run_process dict.
 
     The container gets a unique --name. If the outer watchdog times out,
@@ -256,7 +282,8 @@ def run_in_sandbox(container_cmd, worktree, *, stdin=None, timeout=None,
 
     name = f"pdd-{uuid.uuid4().hex[:16]}"
     argv = docker_run_argv(
-        container_cmd, worktree, env_passthrough=env_passthrough, network=network, name=name
+        container_cmd, worktree, env_passthrough=env_passthrough, network=network,
+        name=name, proxy_url=proxy_url,
     )
     result = run_process(argv, env=stage_env(), timeout_s=timeout, stdin_input=stdin)
     if result.get("timed_out"):
