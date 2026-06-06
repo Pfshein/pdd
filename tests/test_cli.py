@@ -81,6 +81,17 @@ def test_proxy_up_renders_conf_and_starts_proxy(monkeypatch, tmp_path):
     assert any(c[:4] == ["docker", "network", "connect", "bridge"] for c in calls)
 
 
+def test_setup_proxy_up_uses_setup_allowlist(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "SANDBOX_SETUP_PROXY_CONF", tmp_path / "setup-squid.conf")
+    monkeypatch.setattr(config, "setup_host_allowlist", lambda: ["pypi.org"])
+    calls = []
+    monkeypatch.setattr(cli, "_run_command", lambda argv: calls.append(argv) or 0)
+
+    assert cli.main(["setup-proxy-up"]) == 0
+    assert ".pypi.org" in (tmp_path / "setup-squid.conf").read_text(encoding="utf-8")
+    assert any("pdd-setup-proxy" in c for c in calls)
+
+
 def test_cli_resume_invokes_resume(monkeypatch, capsys):
     monkeypatch.setattr(run_mod, "resume_pipeline", lambda job: {"node": "DONE"})
     assert cli.main(["resume", "JOB"]) == 0

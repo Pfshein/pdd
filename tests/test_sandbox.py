@@ -122,6 +122,22 @@ def test_proxy_run_and_connect_argv(monkeypatch, tmp_path):
     ]
 
 
+def test_setup_proxy_uses_separate_name_and_conf(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "SANDBOX_SETUP_PROXY_NAME", "pdd-setup-proxy")
+    monkeypatch.setattr(config, "SANDBOX_SETUP_NETWORK", "pdd-internal")
+    monkeypatch.setattr(config, "SANDBOX_PROXY_IMAGE", "ubuntu/squid:latest")
+    monkeypatch.setattr(config, "SANDBOX_SETUP_PROXY_CONF", tmp_path / "setup-squid.conf")
+    monkeypatch.setattr(config, "setup_host_allowlist", lambda: ["pypi.org", "registry.npmjs.org"])
+
+    conf = sandbox.write_setup_squid_conf()
+    run_argv = sandbox.setup_proxy_run_argv()
+
+    assert "pdd-setup-proxy" in run_argv
+    assert any(a.endswith(":/etc/squid/squid.conf:ro") for a in run_argv)
+    assert ".pypi.org" in (tmp_path / "setup-squid.conf").read_text(encoding="utf-8")
+    assert conf.endswith("setup-squid.conf")
+
+
 def test_docker_run_argv_runs_as_nonroot(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "SANDBOX_USER", "1000:1000")
     argv = sandbox.docker_run_argv(["qwen"], tmp_path)
@@ -204,6 +220,52 @@ def test_test_run_uses_no_network_in_docker(tmp_path, monkeypatch):
     res = testrun.run_tests("JOB-NET", tmp_path, "python -m pytest -q")
     assert captured.get("network") == "none"  # tests get NO egress
     assert res["status"] == "green"
+
+
+def test_setup_command_runs_before_tests_with_setup_proxy(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(config, "SANDBOX_SETUP_NETWORK", "pdd-internal")
+    monkeypatch.setattr(config, "SANDBOX_SETUP_HTTPS_PROXY", "http://pdd-setup-proxy:3128")
+    monkeypatch.setattr(sandbox, "ensure_ready", lambda: "docker")
+    calls = []
+
+    def fake_run_in_sandbox(cmd, worktree, **kw):
+        calls.append((cmd, kw))
+        return {"exit_code": 0, "stdout": "ok", "stderr": "", "timed_out": False, "container": "pdd-x"}
+
+    monkeypatch.setattr(sandbox, "run_in_sandbox", fake_run_in_sandbox)
+
+    res = testrun.run_tests(
+        "JOB-DEPS", tmp_path, "python -m pytest -q",
+        setup_command="pip install -r requirements.txt",
+    )
+
+    assert res["status"] == "green"
+    assert calls[0][0] == ["sh", "-lc", "pip install -r requirements.txt"]
+    assert calls[0][1]["network"] == "pdd-internal"
+    assert calls[0][1]["proxy_url"] == "http://pdd-setup-proxy:3128"
+    assert calls[1][0] == ["sh", "-lc", "python -m pytest -q"]
+    assert calls[1][1]["network"] == "none"
+    assert (config.RUNS_DIR / "JOB-DEPS" / "setup_result.json").exists()
+
+
+def test_setup_failure_marks_test_run_red(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(sandbox, "ensure_ready", lambda: "docker")
+    calls = []
+
+    def fake_run_in_sandbox(cmd, worktree, **kw):
+        calls.append(cmd)
+        return {"exit_code": 1, "stdout": "", "stderr": "no package", "timed_out": False}
+
+    monkeypatch.setattr(sandbox, "run_in_sandbox", fake_run_in_sandbox)
+
+    res = testrun.run_tests("JOB-DEPS-RED", tmp_path, "pytest", setup_command="npm ci")
+
+    assert res["status"] == "red"
+    assert res["phase"] == "setup"
+    assert "no package" in res["log_tail"]
+    assert calls == [["sh", "-lc", "npm ci"]]  # tests did not run after failed setup
 
 
 def test_unsandboxed_test_run_writes_security_artifact(tmp_path, monkeypatch):

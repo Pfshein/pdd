@@ -5,7 +5,7 @@ qwen stages: INTAKE(meta) / ARCHITECT / reviewers emit structured output via
 Deterministic steps: TRIAGE and TEST_RUN are plain code.
 
 make_run_node(ctx) returns the run_node(node, state) callable the driver expects.
-ctx = {repo, base_sha, task_md, task_meta, test_command}
+ctx = {repo, base_sha, task_md, task_meta, test_command, setup_command}
 """
 import json
 
@@ -199,7 +199,12 @@ def _tester(job: str, ctx: dict) -> dict:
 
 
 def _test_run(job: str, ctx: dict) -> dict:
-    result = testrun.run_tests(job, worktree.worktree_path(job), ctx.get("test_command"))
+    result = testrun.run_tests(
+        job,
+        worktree.worktree_path(job),
+        ctx.get("test_command"),
+        setup_command=ctx.get("setup_command"),
+    )
     return {"test": result, "signature": testrun.failure_signature(result)}
 
 

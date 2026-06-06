@@ -44,6 +44,7 @@ def cmd_run(args) -> int:
         task_md=task_md,
         task_meta=task_meta,
         test_command=args.test_command,
+        setup_command=args.setup_command,
         base_ref=args.base_ref,
         keep_worktree=not args.drop_worktree,
     )
@@ -245,6 +246,19 @@ def cmd_proxy_smoke(args) -> int:
     return 0
 
 
+def cmd_setup_proxy_up(args) -> int:
+    conf = sandbox.write_setup_squid_conf()
+    print(f"setup squid conf ({len(config.setup_host_allowlist())} allowed host(s)): {conf}")
+    rc = _run_command(sandbox.setup_proxy_run_argv())
+    if rc != 0:
+        return rc
+    return _run_command(sandbox.setup_proxy_connect_external_argv())
+
+
+def cmd_setup_proxy_status(args) -> int:
+    return _run_command(sandbox.setup_proxy_status_argv())
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="PDD pipeline CLI.")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -255,6 +269,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--task", required=True, help="path to task.md")
     run_p.add_argument("--meta", required=True, help="path to task_meta.json")
     run_p.add_argument("--test-command", default=None)
+    run_p.add_argument("--setup-command", default=None, help="dependency install command before TEST_RUN")
     run_p.add_argument("--base-ref", default="HEAD")
     run_p.add_argument("--drop-worktree", action="store_true")
     run_p.set_defaults(func=cmd_run)
@@ -325,6 +340,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     proxy_smoke_p = sub.add_parser("proxy-smoke", help="check allowed vs denied egress via proxy")
     proxy_smoke_p.set_defaults(func=cmd_proxy_smoke)
+
+    setup_proxy_up_p = sub.add_parser("setup-proxy-up", help="start dependency setup proxy")
+    setup_proxy_up_p.set_defaults(func=cmd_setup_proxy_up)
+
+    setup_proxy_status_p = sub.add_parser("setup-proxy-status", help="show dependency setup proxy status")
+    setup_proxy_status_p.set_defaults(func=cmd_setup_proxy_status)
     return p
 
 

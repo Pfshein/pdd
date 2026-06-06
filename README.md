@@ -64,6 +64,19 @@ python -m orchestrator.cli diff DEMO-1
 python -m orchestrator.cli cleanup DEMO-1
 ```
 
+Для репозиториев, где перед тестами нужно поставить зависимости, используйте отдельную
+setup-фазу:
+
+```bash
+python -m orchestrator.cli setup-proxy-up
+python -m orchestrator.cli run --job DEMO-1 --repo <repo> --task task.md --meta task_meta.json \
+  --setup-command "pip install -r requirements.txt" \
+  --test-command "python -m pytest -q"
+```
+
+`--setup-command` выполняется в контейнере до `TEST_RUN`. У этой фазы отдельный proxy/allowlist
+для package registry, а сам `TEST_RUN` по-прежнему запускается с `--network none`.
+
 `run` оставляет за собой:
 
 ```text
@@ -87,6 +100,8 @@ PYTHONPATH=. python tools/probe_review.py   # одна реальная стад
 python -m orchestrator.cli sandbox-build
 python -m orchestrator.cli sandbox-network
 python -m orchestrator.cli sandbox-smoke <worktree-or-temp-dir>
+python -m orchestrator.cli proxy-up
+python -m orchestrator.cli setup-proxy-up
 ```
 
 На Windows лучше закрепить проектный интерпретатор через venv, чтобы не зависеть от
