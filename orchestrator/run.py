@@ -25,6 +25,7 @@ PER_RUN_ARTIFACTS = (
     "publish.json",
     "SECURITY.txt",
     "reaped.json",
+    "sandbox_audit.jsonl",
 )
 
 

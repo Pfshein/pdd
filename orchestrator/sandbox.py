@@ -13,6 +13,7 @@ Invariant is fail-closed: no Docker and no explicit override -> executing stages
 refuse to start (raise SandboxUnavailable).
 """
 import os
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -75,6 +76,40 @@ def ensure_ready() -> str:
 # Credentials forwarded into the container BY NAME (docker reads the value from
 # this process's env), so the secret value never appears in any argv.
 DEFAULT_ENV_PASSTHROUGH = ("OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL")
+
+
+def _seccomp_security_opt(profile: str | None = None) -> str | None:
+    """Return Docker security-opt for a custom seccomp profile, if configured."""
+    profile = config.SANDBOX_SECCOMP_PROFILE if profile is None else profile
+    if not profile:
+        return None
+    p = Path(profile)
+    if not p.is_absolute():
+        p = config.ROOT / p
+    return f"seccomp={p}"
+
+
+def _redact_argv(argv: list) -> list:
+    """Keep audit logs useful without leaking accidental inline secrets."""
+    out = []
+    for item in argv:
+        s = str(item)
+        if "KEY=" in s or "TOKEN=" in s or "SECRET=" in s:
+            k, _, _v = s.partition("=")
+            out.append(f"{k}=<redacted>")
+        else:
+            out.append(s)
+    return out
+
+
+def record_sandbox_audit(job: str, record: dict) -> None:
+    """Append one sandbox execution audit row for a job."""
+    from . import state as state_mod  # lazy: avoid import cycle
+
+    row = {"ts": time.time(), **record}
+    path = state_mod.job_dir(job) / "sandbox_audit.jsonl"
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def docker_build_argv(*, image: str | None = None, dockerfile=None, context=None,
@@ -243,6 +278,9 @@ def docker_run_argv(container_cmd, worktree, *, env_passthrough=DEFAULT_ENV_PASS
         "-e", "NPM_CONFIG_CACHE=/tmp/npm-cache",
         "-e", "PIP_CACHE_DIR=/tmp/pip-cache",
     ]
+    seccomp = _seccomp_security_opt()
+    if seccomp:
+        argv += ["--security-opt", seccomp]
     for key in env_passthrough:
         argv += ["-e", key]  # value taken from the docker process env, not argv
     proxy_url = config.SANDBOX_HTTPS_PROXY if proxy_url is None else proxy_url
@@ -269,7 +307,7 @@ def _force_remove_container(name: str) -> None:
 
 def run_in_sandbox(container_cmd, worktree, *, stdin=None, timeout=None,
                    env_passthrough=DEFAULT_ENV_PASSTHROUGH, network=None,
-                   proxy_url=None) -> dict:
+                   proxy_url=None, job=None, stage=None) -> dict:
     """Run container_cmd inside the sandbox container; return run_process dict.
 
     The container gets a unique --name. If the outer watchdog times out,
@@ -289,4 +327,16 @@ def run_in_sandbox(container_cmd, worktree, *, stdin=None, timeout=None,
     if result.get("timed_out"):
         _force_remove_container(name)
     result["container"] = name
+    if job:
+        record_sandbox_audit(job, {
+            "stage": stage,
+            "container": name,
+            "image": config.SANDBOX_IMAGE,
+            "network": network or config.SANDBOX_NETWORK,
+            "worktree": os.path.abspath(str(worktree)),
+            "seccomp": _seccomp_security_opt() or "docker-default",
+            "exit_code": result.get("exit_code"),
+            "timed_out": result.get("timed_out"),
+            "argv": _redact_argv(argv),
+        })
     return result

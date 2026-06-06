@@ -101,6 +101,8 @@ def _run_editor(role: str, sections: dict, job: str, node: str):
         output_format="json",
         wall_time_s=_wall(node),
         max_tool_calls=config.STAGE_MAX_TOOL_CALLS,
+        job=job,
+        stage=node,
     )
 
 

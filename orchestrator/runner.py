@@ -132,6 +132,8 @@ def run_qwen_stage(
     wall_time_s: int | None = None,
     max_tool_calls: int | None = None,
     extra: list | None = None,
+    job: str | None = None,
+    stage: str | None = None,
 ) -> dict:
     """High-level: build argv from config creds and run with the outer watchdog.
 
@@ -165,7 +167,10 @@ def run_qwen_stage(
         )
         outer_timeout = wall + config.STAGE_KILL_MARGIN_S
         if mode == "docker":
-            res = sandbox.run_in_sandbox(argv, worktree=cwd, stdin=prompt, timeout=outer_timeout)
+            res = sandbox.run_in_sandbox(
+                argv, worktree=cwd, stdin=prompt, timeout=outer_timeout,
+                job=job, stage=stage,
+            )
         else:
             if mode == "UNSANDBOXED":
                 sys.stderr.write(

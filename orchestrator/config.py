@@ -76,6 +76,8 @@ SANDBOX_MEMORY = os.environ.get("PDD_SANDBOX_MEMORY", "2g")
 SANDBOX_CPUS = os.environ.get("PDD_SANDBOX_CPUS", "2")
 # Run the agent container as this non-root user (uid:gid). Empty disables --user.
 SANDBOX_USER = os.environ.get("PDD_SANDBOX_USER", "1000:1000")
+# Optional custom seccomp profile. Empty keeps Docker's built-in default profile.
+SANDBOX_SECCOMP_PROFILE = os.environ.get("PDD_SECCOMP_PROFILE", "")
 
 # --- Egress allowlist proxy ----------------------------------------------
 # Agents have NO direct egress; they reach ONLY the model endpoint, via a squid

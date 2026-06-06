@@ -40,6 +40,20 @@ def test_security_warning_is_prominent(tmp_path, monkeypatch):
     assert "CODER ran UNSANDBOXED" in md
 
 
+def test_sandbox_audit_section(tmp_path, monkeypatch):
+    _seed("JOB-AUDIT", monkeypatch, tmp_path)
+    (state_mod.job_dir("JOB-AUDIT") / "sandbox_audit.jsonl").write_text(
+        '{"stage":"TEST_RUN","container":"pdd-x","network":"none","seccomp":"docker-default","exit_code":0,"timed_out":false}\n',
+        encoding="utf-8",
+    )
+
+    md = report.build_report("JOB-AUDIT")
+
+    assert "## Sandbox audit" in md
+    assert "**TEST_RUN**" in md
+    assert "container `pdd-x`" in md
+
+
 def test_escalation_only_for_needs_human(tmp_path, monkeypatch):
     _seed("JOB-ESC", monkeypatch, tmp_path)  # node == DONE
     artifacts.write_text("JOB-ESC", "escalation.md", "stale escalation")

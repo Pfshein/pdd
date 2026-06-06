@@ -1,0 +1,27 @@
+{
+  "defaultAction": "SCMP_ACT_ALLOW",
+  "syscalls": [
+    {
+      "names": [
+        "add_key",
+        "bpf",
+        "delete_module",
+        "finit_module",
+        "init_module",
+        "keyctl",
+        "kexec_file_load",
+        "kexec_load",
+        "mount",
+        "open_by_handle_at",
+        "perf_event_open",
+        "ptrace",
+        "reboot",
+        "request_key",
+        "setns",
+        "umount2",
+        "unshare"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    }
+  ]
+}

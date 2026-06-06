@@ -1,4 +1,5 @@
 """Sandbox invariants: fail-closed and no secrets in docker argv."""
+import json
 import subprocess
 
 import pytest
@@ -49,6 +50,16 @@ def test_docker_run_argv_contains_hardening_flags_without_secret_values(monkeypa
     assert "XDG_CACHE_HOME=/tmp/pdd-cache" in argv
     assert "OPENAI_API_KEY" in argv
     assert "sk-secret-value" not in joined
+
+
+def test_docker_run_argv_adds_custom_seccomp_when_configured(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "SANDBOX_SECCOMP_PROFILE", "sandbox/seccomp.json")
+
+    argv = sandbox.docker_run_argv(["qwen"], tmp_path)
+
+    seccomp = f"seccomp={config.ROOT / 'sandbox' / 'seccomp.json'}"
+    assert "--security-opt" in argv
+    assert seccomp in argv
 
 
 def test_docker_build_argv_defaults_to_project_dockerfile(monkeypatch):
@@ -204,6 +215,31 @@ def test_run_in_sandbox_no_teardown_on_success(tmp_path, monkeypatch):
     assert calls == []  # --rm handles cleanup; no force-remove on success
 
 
+def test_run_in_sandbox_writes_audit_log(tmp_path, monkeypatch):
+    from orchestrator import runner
+
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(config, "SANDBOX_SECCOMP_PROFILE", "sandbox/seccomp.json")
+    monkeypatch.setattr(runner, "stage_env", lambda: {})
+    monkeypatch.setattr(
+        runner,
+        "run_process",
+        lambda argv, **kw: {"exit_code": 0, "stdout": "ok", "stderr": "", "timed_out": False},
+    )
+
+    res = sandbox.run_in_sandbox(["sh", "-lc", "echo ok"], tmp_path, job="JOB-AUD", stage="TEST_RUN")
+    rows = [
+        json.loads(line)
+        for line in (config.RUNS_DIR / "JOB-AUD" / "sandbox_audit.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert res["container"].startswith("pdd-")
+    assert rows[0]["stage"] == "TEST_RUN"
+    assert rows[0]["network"] == config.SANDBOX_NETWORK
+    assert rows[0]["seccomp"].startswith("seccomp=")
+    assert rows[0]["exit_code"] == 0
+
+
 def test_test_run_uses_no_network_in_docker(tmp_path, monkeypatch):
     from orchestrator import testrun
 
@@ -219,6 +255,8 @@ def test_test_run_uses_no_network_in_docker(tmp_path, monkeypatch):
 
     res = testrun.run_tests("JOB-NET", tmp_path, "python -m pytest -q")
     assert captured.get("network") == "none"  # tests get NO egress
+    assert captured.get("job") == "JOB-NET"
+    assert captured.get("stage") == "TEST_RUN"
     assert res["status"] == "green"
 
 
@@ -244,6 +282,8 @@ def test_setup_command_runs_before_tests_with_setup_proxy(tmp_path, monkeypatch)
     assert calls[0][0] == ["sh", "-lc", "pip install -r requirements.txt"]
     assert calls[0][1]["network"] == "pdd-internal"
     assert calls[0][1]["proxy_url"] == "http://pdd-setup-proxy:3128"
+    assert calls[0][1]["job"] == "JOB-DEPS"
+    assert calls[0][1]["stage"] == "SETUP_COMMAND"
     assert calls[1][0] == ["sh", "-lc", "python -m pytest -q"]
     assert calls[1][1]["network"] == "none"
     assert (config.RUNS_DIR / "JOB-DEPS" / "setup_result.json").exists()

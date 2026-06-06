@@ -105,6 +105,15 @@ python -m orchestrator.cli proxy-up
 python -m orchestrator.cli setup-proxy-up
 ```
 
+Опциональный seccomp-профиль для agent/test containers:
+
+```bash
+PDD_SECCOMP_PROFILE=sandbox/seccomp.json python -m orchestrator.cli run --job DEMO-1 --repo <repo> --task task.md --meta task_meta.json
+```
+
+Каждый sandbox-запуск с привязкой к job пишет `sandbox_audit.jsonl` в артефакты job и попадает
+в `report`.
+
 На Windows лучше закрепить проектный интерпретатор через venv, чтобы не зависеть от
 WindowsApps/PATH alias:
 
