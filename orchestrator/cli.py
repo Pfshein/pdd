@@ -152,6 +152,14 @@ def cmd_report(args) -> int:
     return 0
 
 
+def cmd_doctor(args) -> int:
+    from . import doctor as doctor_mod
+
+    checks = doctor_mod.run_checks()
+    print(doctor_mod.format_checks(checks))
+    return 1 if doctor_mod.has_failures(checks) else 0
+
+
 def cmd_resume(args) -> int:
     try:
         final = run_mod.resume_pipeline(args.job)
@@ -282,6 +290,9 @@ def build_parser() -> argparse.ArgumentParser:
     report_p.add_argument("job")
     report_p.add_argument("--out", default=None, help="write to a file instead of stdout")
     report_p.set_defaults(func=cmd_report)
+
+    doctor_p = sub.add_parser("doctor", help="check the environment (tools, creds, sandbox)")
+    doctor_p.set_defaults(func=cmd_doctor)
 
     resume_p = sub.add_parser("resume", help="continue a job from its saved state")
     resume_p.add_argument("job")
