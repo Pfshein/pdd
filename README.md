@@ -51,8 +51,44 @@ TEST_RUN → FINAL_REVIEW → DONE).
 ## Запуск
 
 ```bash
-python -m pytest -q                 # тесты ядра, kill-tree, парсера
+python -m pytest -q                         # тесты ядра, kill-tree, парсера
+```
+
+Реальный пользовательский поток:
+
+```bash
+python -m orchestrator.cli run --job DEMO-1 --repo <repo> --task task.md --meta task_meta.json
+python -m orchestrator.cli status DEMO-1
+python -m orchestrator.cli show DEMO-1
+python -m orchestrator.cli diff DEMO-1
+python -m orchestrator.cli cleanup DEMO-1
+```
+
+`run` оставляет за собой:
+
+```text
+runs/<JOB>/              # state, transitions, attempts, plan, diff, verdict, tests
+%TEMP%/pdd-worktrees/<JOB>  # рабочий git worktree задачи
+```
+
+Docker — внутренняя граница исполнения для опасных стадий (`CODER`, `TESTER`, `TEST_RUN`),
+а не место, куда пользователь должен заходить руками. Оркестратор, маршрутизация,
+артефакты и CLI остаются на хосте.
+
+Эмпирический прогон одной реальной стадии:
+
+```bash
 PYTHONPATH=. python tools/probe_review.py   # одна реальная стадия ревью на модели
+```
+
+На Windows лучше закрепить проектный интерпретатор через venv, чтобы не зависеть от
+WindowsApps/PATH alias:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -U pip pytest jsonschema
+python -m pytest -q
 ```
 
 Креды модели — в `.qwen/.env` (OpenAI-совместимый эндпоинт). Подробности контракта вызова

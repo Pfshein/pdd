@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator import config, runner, state as state_mod
+from orchestrator import config, runner, state as state_mod, testrun
 from orchestrator import run as run_mod
 
 
@@ -56,10 +56,24 @@ def _fake_run_qwen_stage(prompt, *, cwd, json_schema=None, **kwargs):
     return _events({"type": "result", "is_error": False}, assistant_text="applied fix")
 
 
+def _fake_run_tests(job, worktree, command=None):
+    result = {
+        "status": "green",
+        "command": command or "stub",
+        "exit_code": 0,
+        "log_tail": "",
+    }
+    (state_mod.job_dir(job) / "test_result.json").write_text(
+        json.dumps(result, indent=2), encoding="utf-8"
+    )
+    return result
+
+
 def test_pipeline_reaches_done(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
     monkeypatch.setattr(config, "WORKTREES_DIR", tmp_path / "wt")
     monkeypatch.setattr(runner, "run_qwen_stage", _fake_run_qwen_stage)
+    monkeypatch.setattr(testrun, "run_tests", _fake_run_tests)
 
     repo = _make_repo(tmp_path)
     final = run_mod.run_pipeline(
@@ -73,5 +87,8 @@ def test_pipeline_reaches_done(tmp_path, monkeypatch):
     assert final["node"] == "DONE"
     # artifacts were written
     jd = state_mod.job_dir("JOB-X")
+    job_meta = json.loads((jd / "job_meta.json").read_text(encoding="utf-8"))
+    assert job_meta["branch"] == "pdd/JOB-X"
+    assert job_meta["base_sha"]
     assert (jd / "diff.patch").read_text(encoding="utf-8").find("a + b") != -1
     assert json.loads((jd / "test_result.json").read_text(encoding="utf-8"))["status"] == "green"
