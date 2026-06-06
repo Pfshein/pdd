@@ -72,12 +72,13 @@ setup-proxy-up | setup-proxy-status
 | PDD-16 | job hygiene: `reap`, TTL cleanup, fresh per-run artifacts |
 | PDD-12 | sandbox hardening: opt-in seccomp + `sandbox_audit.jsonl` |
 | PDD-17 | structured events: `events.jsonl` job timeline |
+| PDD-18 | offline product smoke: issue JSON → run → report → publish commit |
 
 **Гейт (PDD-11) доказал**: qwen уважает `HTTPS_PROXY` (модель достижима ТОЛЬКО через прокси),
 egress-allowlist работает (allowed→200, denied→403), полный конвейер в Docker → DONE, без
 утечек и осиротевших контейнеров. Прокси-подход рабочий — сетевой фильтр не нужен.
 
-Тесты: **126 passed** (`python -m pytest -q`). Образ `pdd-sandbox:latest`, сеть `pdd-internal`,
+Тесты: **127 passed** (`python -m pytest -q`). Образ `pdd-sandbox:latest`, сеть `pdd-internal`,
 прокси `pdd-proxy` уже подняты на машине.
 
 ## Конвенции
@@ -139,13 +140,14 @@ sandbox summary) с ключом job/Jira во всех строках. Подк
 Файлы: новый `events.py`, `driver.py`, `run.py`, `report.py`, тесты.
 
 ### 8. End-to-end на реальном Jira-тикете → PR
-Когда готовы #4(deps) и PDD-07: прогнать настоящую задачу из Jira до PR в реальном репо,
-зафиксировать как воспроизводимый сценарий (расширить `docs/gate.md`).
+PDD-18 offline product smoke готов: `issue JSON -> intake -> run -> report -> publish commit`
+на fixture repo со stubbed model/test runner. Следующий шаг: когда будет подключён живой Jira MCP,
+прогнать настоящую задачу из Jira до PR в реальном репо и расширить `docs/gate.md`.
 
 ### 9. (бэклог) settings.json/конфиг-профили, web-UI/status-дашборд, ретеншн артефактов.
 
-**Рекомендуемый порядок:** 4 (Jira) →
-6 (очередь) → 8 (боевой e2e). #5 — когда появится локальный эндпоинт.
+**Рекомендуемый порядок:** 6 (очередь) → 8 (боевой e2e).
+#5 — когда появится локальный эндпоинт.
 
 **Первый шаг для следующей сессии:** `git switch main && git pull --ff-only &&
-git switch -c PDD-07-jira-intake-adapter` и реализовать задачу 4.
+git switch -c PDD-19-job-queue` и реализовать минимальную очередь/lease для нескольких jobs.
