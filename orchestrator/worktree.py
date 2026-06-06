@@ -3,6 +3,7 @@
 Correlation id (the Jira key) names the branch and worktree dir, so parallel
 jobs never collide and the reviewer gets a real unified diff for free.
 """
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -70,3 +71,8 @@ def remove(repo, job: str) -> None:
     _git(["worktree", "remove", "--force", str(wt)], repo)
     _git(["worktree", "prune"], repo)
     _git(["branch", "-D", branch_name(job)], repo)
+    # The dir can linger if it was registered with a DIFFERENT repo (a previous
+    # job/run); `git worktree remove` on this repo won't touch it. Force it so a
+    # re-run of the same job id never wedges on "already exists".
+    if wt.exists():
+        shutil.rmtree(wt, ignore_errors=True)

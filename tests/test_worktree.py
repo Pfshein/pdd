@@ -51,3 +51,15 @@ def test_create_is_idempotent(target_repo):
 def test_rejects_unsafe_job_id(target_repo):
     with pytest.raises(ValueError):
         worktree.create(target_repo, "../NOPE")
+
+
+def test_create_clears_orphaned_dir(target_repo):
+    # A leftover dir from a previous run/repo that git does not know about here.
+    orphan = config.WORKTREES_DIR / "JOB-ORPH"
+    orphan.mkdir(parents=True)
+    (orphan / "stale.txt").write_text("old", encoding="utf-8")
+
+    wt, _, _ = worktree.create(target_repo, "JOB-ORPH")
+    assert wt.exists()
+    assert not (wt / "stale.txt").exists()  # orphan was force-cleared
+    worktree.remove(target_repo, "JOB-ORPH")
