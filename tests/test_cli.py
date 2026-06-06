@@ -43,3 +43,11 @@ def test_diff_prints_saved_diff(tmp_path, monkeypatch, capsys):
     assert "+return a + b" in capsys.readouterr().out
 
 
+def test_sandbox_build_cli_invokes_docker_build(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cli, "_run_command", lambda argv: calls.append(argv) or 0)
+
+    assert cli.main(["sandbox-build", "--image", "pdd-test:latest"]) == 0
+
+    assert calls
+    assert calls[0][:4] == ["docker", "build", "-t", "pdd-test:latest"]

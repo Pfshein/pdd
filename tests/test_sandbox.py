@@ -51,6 +51,35 @@ def test_docker_run_argv_contains_hardening_flags_without_secret_values(monkeypa
     assert "sk-secret-value" not in joined
 
 
+def test_docker_build_argv_defaults_to_project_dockerfile(monkeypatch):
+    monkeypatch.setattr(config, "SANDBOX_IMAGE", "pdd-test:latest")
+
+    argv = sandbox.docker_build_argv(qwen_package="qwen-test")
+
+    assert argv[:4] == ["docker", "build", "-t", "pdd-test:latest"]
+    assert "-f" in argv
+    assert "sandbox" in argv[argv.index("-f") + 1]
+    assert "--build-arg" in argv
+    assert "QWEN_NPM_PACKAGE=qwen-test" in argv
+
+
+def test_dockerfile_uses_node_22_stage():
+    dockerfile = (config.ROOT / "sandbox" / "Dockerfile").read_text(encoding="utf-8")
+    assert "FROM node:22-slim AS node" in dockerfile
+    assert "COPY --from=node" in dockerfile
+    assert "npm-cli.js" in dockerfile
+
+
+def test_docker_network_create_argv(monkeypatch):
+    monkeypatch.setattr(config, "SANDBOX_NETWORK", "pdd-egress-test")
+    assert sandbox.docker_network_create_argv() == [
+        "docker", "network", "create", "pdd-egress-test"
+    ]
+    assert sandbox.docker_network_inspect_argv() == [
+        "docker", "network", "inspect", "pdd-egress-test"
+    ]
+
+
 def test_unsandboxed_test_run_writes_security_artifact(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
     monkeypatch.setattr(sandbox, "ensure_ready", lambda: "UNSANDBOXED")

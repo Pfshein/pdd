@@ -1,0 +1,14 @@
+.git
+.pytest_cache
+.venv
+venv
+__pycache__
+*.pyc
+
+.qwen/.env
+*.env
+
+runs
+worktrees
+.qwen/worktrees
+.tmp-smoke
