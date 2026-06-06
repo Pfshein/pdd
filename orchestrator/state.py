@@ -5,14 +5,28 @@ transitions.jsonl - append-only trace of node transitions
 attempts.jsonl    - append-only compressed "what we already tried" log
 """
 import json
+import re
 import time
 from pathlib import Path
 
 from . import config, graph
 
+JOB_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+def validate_job_id(job: str) -> str:
+    """Job ids become artifact paths and branch suffixes; keep them path-safe."""
+    if not isinstance(job, str) or not JOB_ID_RE.fullmatch(job):
+        raise ValueError(
+            "job id must be 1-128 chars of letters, numbers, dot, underscore, "
+            "or hyphen, and must not contain path separators"
+        )
+    return job
+
 
 def new_state(job: str, budgets: dict | None = None, global_step_cap: int | None = None) -> dict:
     """Create a fresh job state. Pure data."""
+    job = validate_job_id(job)
     budgets = budgets or config.DEFAULT_BUDGETS
     return {
         "job": job,
@@ -28,6 +42,7 @@ def new_state(job: str, budgets: dict | None = None, global_step_cap: int | None
 
 # --- Persistence ----------------------------------------------------------
 def job_dir(job: str) -> Path:
+    job = validate_job_id(job)
     d = config.RUNS_DIR / job
     d.mkdir(parents=True, exist_ok=True)
     return d

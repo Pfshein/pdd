@@ -39,6 +39,19 @@ def _last_assistant_text(stdout: str) -> str:
     return ev or ""
 
 
+def _process_failed(res: dict) -> bool:
+    return bool(res.get("timed_out")) or res.get("exit_code") not in (0, None)
+
+
+def _stage_error(res: dict, fallback: str = "stage failed") -> str:
+    if res.get("timed_out"):
+        return "stage timed out"
+    stderr = (res.get("stderr") or "").strip()
+    if stderr:
+        return stderr[-1000:]
+    return fallback
+
+
 def _run_structured(role: str, sections: dict, schema_file: str, job: str, node: str):
     prompt = artifacts.build_prompt(role, sections)
     res = runner.run_qwen_stage(
@@ -50,6 +63,8 @@ def _run_structured(role: str, sections: dict, schema_file: str, job: str, node:
         max_tool_calls=6,
         extra=["--exclude-tools", EXCLUDE_EXPLORE],
     )
+    if _process_failed(res):
+        return None, _stage_error(res), res
     obj, err = verdict.extract_structured(res["stdout"])
     return obj, err, res
 
@@ -89,9 +104,9 @@ def _architect(job: str, ctx: dict) -> dict:
     obj, err, _ = _run_structured("architect", sections, "plan.json", job, ARCHITECT)
     if obj and obj.get("plan"):
         artifacts.write_text(job, "plan.md", obj["plan"])
-    else:
-        artifacts.write_text(job, "plan.md", f"(architect produced no plan: {err})")
-    return {"status": "ok"}
+        return {"status": "ok"}
+    artifacts.write_text(job, "plan.md", f"(architect produced no plan: {err})")
+    return {"status": "error", "error": err or "architect produced no plan"}
 
 
 def _coder(job: str, ctx: dict) -> dict:
@@ -105,6 +120,8 @@ def _coder(job: str, ctx: dict) -> dict:
         "What we already tried": artifacts.compressed_attempts(job),
     }
     res = _run_editor("coder", sections, job, CODER)
+    if _process_failed(res):
+        return {"status": "error", "error": _stage_error(res), "signature": None}
     artifacts.write_text(job, "changes.md", _last_assistant_text(res["stdout"]))
     return {"status": "ok"}
 
@@ -118,11 +135,11 @@ def _review(job: str, ctx: dict, node: str) -> dict:
         "Diff to review": diff_text or "(empty diff — no changes were made)",
     }
     obj, err, _ = _run_structured("reviewer", sections, "verdict.json", job, node)
-    if obj is None:  # one retry, then fail open (treat as pass) to avoid a hang
+    if obj is None:  # one retry, then fail closed: a broken gate is not a pass.
         obj, err, _ = _run_structured("reviewer", sections, "verdict.json", job, node)
     if obj is None:
         artifacts.write_json(job, "verdict.json", {"issues": [], "_stage_error": err})
-        return {"status": "error", "verdict": {"issues": []}, "signature": None}
+        return {"status": "error", "error": err, "signature": None}
     verdict.validate_verdict(obj)
     artifacts.write_json(job, "verdict.json", obj)
     return {
@@ -138,7 +155,9 @@ def _tester(job: str, ctx: dict) -> dict:
         "Plan": artifacts.read_text(job, "plan.md"),
         "Diff so far": artifacts.read_text(job, "diff.patch"),
     }
-    _run_editor("tester", sections, job, TESTER)
+    res = _run_editor("tester", sections, job, TESTER)
+    if _process_failed(res):
+        return {"status": "error", "error": _stage_error(res), "signature": None}
     return {"status": "ok"}
 
 
