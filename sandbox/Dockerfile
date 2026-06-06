@@ -34,6 +34,11 @@ RUN python -m pip install --no-cache-dir pytest jsonschema \
     && npm install -g "${QWEN_NPM_PACKAGE}" \
     && qwen --version
 
+# Run the agent as a non-root user: even inside the container the blast radius
+# stays small. qwen/node/python are installed globally and remain readable.
+RUN useradd --create-home --uid 1000 pdd
+
 WORKDIR /work
+USER pdd
 
 CMD ["sh", "-lc", "python --version && node --version && qwen --version"]
