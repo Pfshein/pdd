@@ -57,6 +57,7 @@ python -m pytest -q                         # тесты ядра, kill-tree, п
 Реальный пользовательский поток:
 
 ```bash
+python -m orchestrator.cli intake-jira --issue issue.json --out .pdd-intake/DEMO-1
 python -m orchestrator.cli run --job DEMO-1 --repo <repo> --task task.md --meta task_meta.json
 python -m orchestrator.cli status DEMO-1
 python -m orchestrator.cli show DEMO-1
@@ -64,6 +65,10 @@ python -m orchestrator.cli diff DEMO-1
 python -m orchestrator.cli reap                 # dry-run stale job cleanup
 python -m orchestrator.cli cleanup DEMO-1
 ```
+
+`intake-jira` работает с issue JSON, полученным любым способом (Jira export/MCP/REST), и пишет
+`task.md` + `task_meta.json`. Боевой Jira MCP позже должен только заменить источник JSON, а не
+формат артефактов.
 
 Для репозиториев, где перед тестами нужно поставить зависимости, используйте отдельную
 setup-фазу:

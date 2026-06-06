@@ -192,6 +192,30 @@ def cmd_reap(args) -> int:
     return 0
 
 
+def cmd_intake_jira(args) -> int:
+    from . import jira
+
+    issue = json.loads(Path(args.issue).read_text(encoding="utf-8"))
+    res = jira.write_intake(issue, args.out)
+    print(json.dumps(res, indent=2, ensure_ascii=False))
+    return 0
+
+
+def cmd_jira_comment_draft(args) -> int:
+    from . import jira
+
+    job = state_mod.validate_job_id(args.job)
+    report = artifacts.read_text(job, "report.md")
+    escalation = artifacts.read_text(job, "escalation.md")
+    comment = jira.needs_human_comment(job, report_md=report, reason=escalation[:500])
+    if args.out:
+        Path(args.out).write_text(comment, encoding="utf-8")
+        print(f"jira comment draft written to {args.out}")
+    else:
+        print(comment)
+    return 0
+
+
 def _run_command(argv: list[str]) -> int:
     from subprocess import run
 
@@ -333,6 +357,16 @@ def build_parser() -> argparse.ArgumentParser:
     reap_p.add_argument("--apply", action="store_true", help="perform cleanup; default is dry-run")
     reap_p.add_argument("--ttl", type=int, default=None, help=f"default: {config.JOB_TTL_S}s")
     reap_p.set_defaults(func=cmd_reap)
+
+    intake_jira_p = sub.add_parser("intake-jira", help="normalize a Jira issue JSON into task files")
+    intake_jira_p.add_argument("--issue", required=True, help="path to Jira issue JSON")
+    intake_jira_p.add_argument("--out", required=True, help="directory for task.md/task_meta.json")
+    intake_jira_p.set_defaults(func=cmd_intake_jira)
+
+    jira_comment_p = sub.add_parser("jira-comment-draft", help="draft a Jira comment for NEEDS_HUMAN")
+    jira_comment_p.add_argument("job")
+    jira_comment_p.add_argument("--out", default=None, help="write draft to file instead of stdout")
+    jira_comment_p.set_defaults(func=cmd_jira_comment_draft)
 
     build_p = sub.add_parser("sandbox-build", help="build the Docker sandbox image")
     build_p.add_argument("--image", default=None, help=f"default: {config.SANDBOX_IMAGE}")
