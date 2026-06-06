@@ -28,7 +28,10 @@ def run_job(job_state: dict, run_node, persist: bool = True) -> dict:
 
         if persist:
             state_mod.record_transition(job, node, nxt, reason)
-            state_mod.record_attempt(job, node, reason, result.get("signature"))
+            state_mod.record_attempt(
+                job, node, reason, result.get("signature"),
+                status=result.get("status"), limit=result.get("limit"),
+            )
             state_mod.save_state(job_state)
 
         node = nxt
