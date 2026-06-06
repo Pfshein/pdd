@@ -8,7 +8,7 @@ import argparse
 import json
 import sys
 
-from . import artifacts, config, driver, graph, sandbox, stages, state as state_mod, worktree
+from . import artifacts, config, driver, events, graph, sandbox, stages, state as state_mod, worktree
 from .graph import NEEDS_HUMAN, DONE
 
 PER_RUN_ARTIFACTS = (
@@ -26,6 +26,7 @@ PER_RUN_ARTIFACTS = (
     "SECURITY.txt",
     "reaped.json",
     "sandbox_audit.jsonl",
+    "events.jsonl",
 )
 
 
@@ -62,6 +63,10 @@ def run_pipeline(job, repo, *, task_md, task_meta, test_command=None, setup_comm
                  base_ref="HEAD", keep_worktree=True) -> dict:
     _reset_job_logs(job)
     wt, branch, base_sha = worktree.create(repo, job, base_ref)
+    events.record(
+        job, "run_created", repo=str(repo), base_ref=base_ref,
+        base_sha=base_sha, branch=branch, worktree=str(wt),
+    )
     artifacts.write_json(job, "job_meta.json", {
         "job": job,
         "repo": str(repo),
@@ -82,6 +87,7 @@ def run_pipeline(job, repo, *, task_md, task_meta, test_command=None, setup_comm
     }
     st = state_mod.new_state(job)
     final = driver.run_job(st, stages.make_run_node(ctx), persist=True)
+    events.record(job, "run_finished", node=final["node"], global_steps=final["global_steps"])
 
     if final["node"] == NEEDS_HUMAN:
         _write_escalation(job, final)
