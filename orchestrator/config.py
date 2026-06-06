@@ -52,6 +52,22 @@ STAGE_WALL_TIME = {
     "INTAKE": 120,
 }
 
+# --- Sandbox (the security boundary for executing stages) -----------------
+# Executing stages (CODER/TESTER edits, TEST_RUN) run with --yolo and can run
+# arbitrary shell. The ONLY real boundary is an OS-level sandbox: a Docker
+# container with just the worktree mounted, no host env, egress allowlisted.
+# worktree = file isolation (not a boundary); review = quality gate (not a boundary).
+REQUIRE_SANDBOX = os.environ.get("PDD_REQUIRE_SANDBOX", "1") == "1"
+ALLOW_UNSANDBOXED = os.environ.get("PDD_ALLOW_UNSANDBOXED") == "1"
+SANDBOX_IMAGE = os.environ.get("PDD_SANDBOX_IMAGE", "pdd-sandbox:latest")
+SANDBOX_NETWORK = os.environ.get("PDD_SANDBOX_NETWORK", "pdd-egress")
+SANDBOX_PIDS_LIMIT = int(os.environ.get("PDD_SANDBOX_PIDS", "512"))
+SANDBOX_MEMORY = os.environ.get("PDD_SANDBOX_MEMORY", "2g")
+SANDBOX_CPUS = os.environ.get("PDD_SANDBOX_CPUS", "2")
+# HTTPS proxy reachable from SANDBOX_NETWORK; the egress allowlist lives there.
+SANDBOX_HTTPS_PROXY = os.environ.get("PDD_SANDBOX_HTTPS_PROXY", "")
+
+
 # --- Model credentials ----------------------------------------------------
 def load_env_file(path: Path) -> dict:
     """Parse a simple KEY="value" .env file. Tolerant of quotes/blank lines."""

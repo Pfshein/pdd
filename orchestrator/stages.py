@@ -9,7 +9,7 @@ ctx = {repo, base_sha, task_md, task_meta, test_command}
 """
 import json
 
-from . import artifacts, config, runner, testrun, triage, verdict, worktree
+from . import artifacts, config, runner, sandbox, testrun, triage, verdict, worktree
 from .graph import (
     INTAKE, TRIAGE, ARCHITECT, CODER, CODE_REVIEW, TESTER, TEST_RUN, FINAL_REVIEW,
 )
@@ -70,10 +70,12 @@ def _run_structured(role: str, sections: dict, schema_file: str, job: str, node:
 
 
 def _run_editor(role: str, sections: dict, job: str, node: str):
+    # Executing stage: edits files + runs shell under --yolo -> MUST be isolated.
     prompt = artifacts.build_prompt(role, sections)
     return runner.run_qwen_stage(
         prompt,
         cwd=worktree.worktree_path(job),
+        isolate=True,
         output_format="json",
         wall_time_s=_wall(node),
         max_tool_calls=config.STAGE_MAX_TOOL_CALLS,
@@ -120,6 +122,8 @@ def _coder(job: str, ctx: dict) -> dict:
         "What we already tried": artifacts.compressed_attempts(job),
     }
     res = _run_editor("coder", sections, job, CODER)
+    if res.get("sandbox") == "UNSANDBOXED":
+        sandbox.record_unsandboxed_override(job, CODER)
     if _process_failed(res):
         return {"status": "error", "error": _stage_error(res), "signature": None}
     artifacts.write_text(job, "changes.md", _last_assistant_text(res["stdout"]))
@@ -156,6 +160,8 @@ def _tester(job: str, ctx: dict) -> dict:
         "Diff so far": artifacts.read_text(job, "diff.patch"),
     }
     res = _run_editor("tester", sections, job, TESTER)
+    if res.get("sandbox") == "UNSANDBOXED":
+        sandbox.record_unsandboxed_override(job, TESTER)
     if _process_failed(res):
         return {"status": "error", "error": _stage_error(res), "signature": None}
     return {"status": "ok"}
