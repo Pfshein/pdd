@@ -45,7 +45,11 @@ def _process_failed(res: dict) -> bool:
 
 def _stage_error(res: dict, fallback: str = "stage failed") -> str:
     if res.get("timed_out"):
-        return "stage timed out"
+        return "stage timed out (outer watchdog)"
+    if res.get("limit") == "tool_calls":
+        return "tool-call budget exceeded (agent stuck in a tool loop)"
+    if res.get("limit") == "wall_time":
+        return "wall-time budget exceeded even after a longer retry (too slow)"
     stderr = (res.get("stderr") or "").strip()
     if stderr:
         return stderr[-1000:]

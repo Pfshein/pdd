@@ -60,6 +60,10 @@ stdout = JSON-массив событий. Берём ПОСЛЕДНИЙ `{"type
 
 - `0` — успех.
 - `1` — ошибочный `result` (например, схема не выполнена).
-- `55` — превышен `--max-wall-time` / `--max-tool-calls` (внутренний лимит).
+- `55` — превышен внутренний лимит (`FatalBudgetExceededError`). Оба лимита дают 55;
+  причина — только в тексте ошибки (на **stderr**):
+  - tool-calls: `...tool-call budget of N exceeded (--max-tool-calls)...` → «застрял», эскалация;
+  - wall-time: `...wall-clock budget of Ns exceeded (--max-wall-time).` → «медленно», один
+    ретрай с бóльшим бюджетом. Разводит `runner.classify_limit()`.
 - Внешний watchdog (`run_process` timeout → `kill_tree`) — поверх, на случай зависания
   до срабатывания внутренних лимитов.

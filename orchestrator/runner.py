@@ -17,6 +17,24 @@ QWEN_BIN = shutil.which("qwen") or "qwen"
 QWEN_EXIT_LIMIT = 55  # qwen aborts with 55 when wall-time / tool-calls exceeded
 
 
+def classify_limit(result: dict) -> str | None:
+    """Disambiguate qwen's exit-55 budget abort (FatalBudgetExceededError).
+
+    Both limits share exit 55; the reason is only in the error text (on stderr):
+      tool-calls -> "...tool-call budget of N exceeded (--max-tool-calls)..."  -> "stuck"
+      wall-time  -> "...wall-clock budget of Ns exceeded (--max-wall-time)."   -> "slow"
+    Returns "tool_calls" | "wall_time" | "unknown" | None (not a limit abort).
+    """
+    if result.get("exit_code") != QWEN_EXIT_LIMIT:
+        return None
+    blob = (result.get("stderr") or "") + (result.get("stdout") or "")
+    if "max-tool-calls" in blob or "tool-call budget" in blob:
+        return "tool_calls"
+    if "max-wall-time" in blob or "wall-clock budget" in blob:
+        return "wall_time"
+    return "unknown"
+
+
 def stage_env(extra: dict | None = None) -> dict:
     """Full child environment = inherited env + OPENAI_* creds (+ overrides).
 
@@ -128,36 +146,46 @@ def run_qwen_stage(
     from . import sandbox  # lazy: avoid import cycle
 
     mode = sandbox.ensure_ready() if isolate else "host"
-
     creds = config.model_env()
-    wall = wall_time_s if wall_time_s is not None else config.STAGE_WALL_TIME_S
+    base_wall = wall_time_s if wall_time_s is not None else config.STAGE_WALL_TIME_S
     tools = max_tool_calls if max_tool_calls is not None else config.STAGE_MAX_TOOL_CALLS
-    argv = build_qwen_argv(
-        model=creds["OPENAI_MODEL"],
-        base_url=creds["OPENAI_BASE_URL"],
-        approval=approval,
-        json_schema=json_schema,
-        output_format=output_format,
-        json_file=json_file,
-        wall_time_s=wall,
-        max_tool_calls=tools,
-        extra=extra,
-        qwen_bin="qwen" if mode == "docker" else None,
-    )
-    outer_timeout = wall + config.STAGE_KILL_MARGIN_S
 
-    if mode == "docker":
-        result = sandbox.run_in_sandbox(argv, worktree=cwd, stdin=prompt, timeout=outer_timeout)
-    else:
-        if mode == "UNSANDBOXED":
-            sys.stderr.write(
-                "!! PDD SECURITY: executing stage running WITHOUT sandbox "
-                "(PDD_ALLOW_UNSANDBOXED). The agent has full host privileges.\n"
-            )
-        result = run_process(
-            argv, cwd=cwd, env=stage_env(), timeout_s=outer_timeout, stdin_input=prompt
+    def _execute(wall: int) -> dict:
+        argv = build_qwen_argv(
+            model=creds["OPENAI_MODEL"],
+            base_url=creds["OPENAI_BASE_URL"],
+            approval=approval,
+            json_schema=json_schema,
+            output_format=output_format,
+            json_file=json_file,
+            wall_time_s=wall,
+            max_tool_calls=tools,
+            extra=extra,
+            qwen_bin="qwen" if mode == "docker" else None,
         )
+        outer_timeout = wall + config.STAGE_KILL_MARGIN_S
+        if mode == "docker":
+            res = sandbox.run_in_sandbox(argv, worktree=cwd, stdin=prompt, timeout=outer_timeout)
+        else:
+            if mode == "UNSANDBOXED":
+                sys.stderr.write(
+                    "!! PDD SECURITY: executing stage running WITHOUT sandbox "
+                    "(PDD_ALLOW_UNSANDBOXED). The agent has full host privileges.\n"
+                )
+            res = run_process(
+                argv, cwd=cwd, env=stage_env(), timeout_s=outer_timeout, stdin_input=prompt
+            )
+        res["argv"] = argv
+        res["sandbox"] = mode
+        return res
 
-    result["argv"] = argv
-    result["sandbox"] = mode
+    result = _execute(base_wall)
+    limit = classify_limit(result)
+    # wall-time exceeded == "slow", not "stuck": one retry with a bigger budget.
+    if limit == "wall_time":
+        bigger = min(int(base_wall * config.STAGE_WALL_RETRY_FACTOR), config.STAGE_WALL_MAX_S)
+        if bigger > base_wall:
+            result = _execute(bigger)
+            limit = classify_limit(result)
+    result["limit"] = limit
     return result

@@ -35,6 +35,9 @@ STAGE_WALL_TIME_S = 600
 STAGE_KILL_MARGIN_S = 60
 # Cumulative tool-call cap per stage (--max-tool-calls).
 STAGE_MAX_TOOL_CALLS = 40
+# wall-time budget exceeded means "slow", not "stuck": retry once, bigger budget.
+STAGE_WALL_RETRY_FACTOR = 2
+STAGE_WALL_MAX_S = 1200
 # Whole-job TTL; reaper kills anything still alive past this.
 JOB_TTL_S = 3600
 
