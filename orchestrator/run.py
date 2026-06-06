@@ -8,7 +8,7 @@ import argparse
 import json
 import sys
 
-from . import artifacts, config, driver, stages, state as state_mod, worktree
+from . import artifacts, config, driver, sandbox, stages, state as state_mod, worktree
 from .graph import NEEDS_HUMAN, DONE
 
 
@@ -45,6 +45,15 @@ def run_pipeline(job, repo, *, task_md, task_meta, test_command=None,
                  base_ref="HEAD", keep_worktree=True) -> dict:
     _reset_job_logs(job)
     wt, branch, base_sha = worktree.create(repo, job, base_ref)
+    artifacts.write_json(job, "job_meta.json", {
+        "job": job,
+        "repo": str(repo),
+        "base_ref": base_ref,
+        "base_sha": base_sha,
+        "branch": branch,
+        "worktree": str(wt),
+        "test_command": test_command or config.TEST_COMMAND,
+    })
     ctx = {
         "repo": str(repo),
         "base_sha": base_sha,
