@@ -69,6 +69,24 @@ def _run_structured(role: str, sections: dict, schema_file: str, job: str, node:
     return obj, err, res
 
 
+def _run_freeform(role: str, sections: dict, job: str, node: str):
+    """Free-form text stage (no --json-schema): the model reasons in prose.
+
+    Forcing a schema on a creative stage makes weak models emit plain text and
+    abort (exit 1, burning budget). The architect's output is advisory prose, so
+    we let it think and capture the assistant text.
+    """
+    prompt = artifacts.build_prompt(role, sections)
+    return runner.run_qwen_stage(
+        prompt,
+        cwd=worktree.worktree_path(job),
+        output_format="json",
+        wall_time_s=_wall(node),
+        max_tool_calls=6,
+        extra=["--exclude-tools", EXCLUDE_EXPLORE],
+    )
+
+
 def _run_editor(role: str, sections: dict, job: str, node: str):
     # Executing stage: edits files + runs shell under --yolo -> MUST be isolated.
     prompt = artifacts.build_prompt(role, sections)
@@ -103,12 +121,15 @@ def _architect(job: str, ctx: dict) -> dict:
         "Reviewer verdict to address": artifacts.read_text(job, "verdict.json"),
         "What we already tried": artifacts.compressed_attempts(job),
     }
-    obj, err, _ = _run_structured("architect", sections, "plan.json", job, ARCHITECT)
-    if obj and obj.get("plan"):
-        artifacts.write_text(job, "plan.md", obj["plan"])
-        return {"status": "ok"}
-    artifacts.write_text(job, "plan.md", f"(architect produced no plan: {err})")
-    return {"status": "error", "error": err or "architect produced no plan"}
+    res = _run_freeform("architect", sections, job, ARCHITECT)
+    if _process_failed(res):
+        err = _stage_error(res)
+        artifacts.write_text(job, "plan.md", f"(architect failed: {err})")
+        return {"status": "error", "error": err}
+    plan = _last_assistant_text(res["stdout"]).strip()
+    # The plan is advisory; an empty one is not fatal (the coder can plan itself).
+    artifacts.write_text(job, "plan.md", plan or "(architect produced no plan text)")
+    return {"status": "ok"}
 
 
 def _coder(job: str, ctx: dict) -> dict:
@@ -138,9 +159,15 @@ def _review(job: str, ctx: dict, node: str) -> dict:
         "Plan": artifacts.read_text(job, "plan.md"),
         "Diff to review": diff_text or "(empty diff — no changes were made)",
     }
-    obj, err, _ = _run_structured("reviewer", sections, "verdict.json", job, node)
+    obj, err, res = _run_structured("reviewer", sections, "verdict.json", job, node)
     if obj is None:  # one retry, then fail closed: a broken gate is not a pass.
-        obj, err, _ = _run_structured("reviewer", sections, "verdict.json", job, node)
+        obj, err, res = _run_structured("reviewer", sections, "verdict.json", job, node)
+    if obj is None and res is not None:
+        # Soft fallback: the model may have emitted a valid verdict as plain text
+        # instead of calling structured_output. salvage_verdict validates it.
+        obj = verdict.salvage_verdict(res.get("stdout", ""))
+        if obj is not None:
+            err = None
     if obj is None:
         artifacts.write_json(job, "verdict.json", {"issues": [], "_stage_error": err})
         return {"status": "error", "error": err, "signature": None}
