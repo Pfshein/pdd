@@ -121,6 +121,20 @@ def cmd_cleanup(args) -> int:
     return 0
 
 
+def cmd_publish(args) -> int:
+    from . import publish as publish_mod
+
+    try:
+        res = publish_mod.publish(
+            args.job, push=args.push, make_pr=args.pr, base=args.base, message=args.message
+        )
+    except publish_mod.PublishError as exc:
+        print(f"publish failed: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(res, indent=2, ensure_ascii=False))
+    return 0 if res.get("committed") else 1
+
+
 def _run_command(argv: list[str]) -> int:
     from subprocess import run
 
@@ -218,6 +232,14 @@ def build_parser() -> argparse.ArgumentParser:
     cleanup_p.add_argument("job")
     cleanup_p.add_argument("--repo", default=None)
     cleanup_p.set_defaults(func=cmd_cleanup)
+
+    publish_p = sub.add_parser("publish", help="commit the job worktree to its branch (+optional push/PR)")
+    publish_p.add_argument("job")
+    publish_p.add_argument("--push", action="store_true", help="push the branch to origin")
+    publish_p.add_argument("--pr", action="store_true", help="open a PR via gh (requires --push)")
+    publish_p.add_argument("--base", default=None, help="PR base branch (default: job base_ref)")
+    publish_p.add_argument("--message", default=None, help="commit title override")
+    publish_p.set_defaults(func=cmd_publish)
 
     build_p = sub.add_parser("sandbox-build", help="build the Docker sandbox image")
     build_p.add_argument("--image", default=None, help=f"default: {config.SANDBOX_IMAGE}")
