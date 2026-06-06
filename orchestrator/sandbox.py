@@ -91,14 +91,94 @@ def docker_build_argv(*, image: str | None = None, dockerfile=None, context=None
 
 
 def docker_network_create_argv(*, network: str | None = None) -> list:
-    """Create the named bridge network if it does not exist."""
+    """Create the sandbox network as INTERNAL (no direct route to the internet)."""
     network = network or config.SANDBOX_NETWORK
-    return ["docker", "network", "create", network]
+    return ["docker", "network", "create", "--internal", network]
 
 
 def docker_network_inspect_argv(*, network: str | None = None) -> list:
     network = network or config.SANDBOX_NETWORK
     return ["docker", "network", "inspect", network]
+
+
+def network_is_internal(network: str | None = None) -> bool | None:
+    """True/False if the network exists, None if it does not / docker errors."""
+    network = network or config.SANDBOX_NETWORK
+    try:
+        r = subprocess.run(
+            ["docker", "network", "inspect", "-f", "{{.Internal}}", network],
+            capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    return r.stdout.strip().lower() == "true"
+
+
+# --- Egress allowlist proxy (squid sidecar) -------------------------------
+def render_squid_conf(hosts) -> str:
+    """squid.conf that allows CONNECT only to the allowlisted hosts on 443."""
+    acls = "\n".join(f"acl allowed_dst dstdomain .{h}" for h in hosts) or \
+        "# (no allowlisted hosts configured)"
+    return (
+        f"acl SSL_ports port 443\n"
+        f"acl CONNECT method CONNECT\n"
+        f"{acls}\n"
+        f"http_access deny CONNECT !SSL_ports\n"
+        f"http_access allow allowed_dst\n"
+        f"http_access deny all\n"
+        f"http_port {config.SANDBOX_PROXY_PORT}\n"
+        f"shutdown_lifetime 1 second\n"
+    )
+
+
+def write_squid_conf(path=None, hosts=None) -> str:
+    """Render the squid config to disk; return the path. Used by `proxy-up`."""
+    path = Path(path or config.SANDBOX_PROXY_CONF)
+    hosts = hosts if hosts is not None else config.model_host_allowlist()
+    path.write_text(render_squid_conf(hosts), encoding="utf-8")
+    return str(path)
+
+
+def proxy_run_argv(*, conf_path=None, name=None, network=None, image=None) -> list:
+    """`docker run -d` for the squid sidecar on the internal network."""
+    name = name or config.SANDBOX_PROXY_NAME
+    network = network or config.SANDBOX_NETWORK
+    image = image or config.SANDBOX_PROXY_IMAGE
+    conf_path = os.path.abspath(str(conf_path or config.SANDBOX_PROXY_CONF))
+    return [
+        "docker", "run", "-d", "--rm", "--name", name,
+        "--network", network,
+        "-v", f"{conf_path}:/etc/squid/squid.conf:ro",
+        image,
+    ]
+
+
+def proxy_connect_external_argv(*, name=None, network=None) -> list:
+    """Attach the proxy to an egress-capable network so it can reach the host."""
+    name = name or config.SANDBOX_PROXY_NAME
+    network = network or config.SANDBOX_EXTERNAL_NETWORK
+    return ["docker", "network", "connect", network, name]
+
+
+def proxy_status_argv(*, name=None) -> list:
+    name = name or config.SANDBOX_PROXY_NAME
+    return ["docker", "ps", "--filter", f"name=^{name}$", "--format", "{{.Names}} {{.Status}}"]
+
+
+def proxy_smoke_argv(host, *, allowed: bool, network=None) -> list:
+    """Curl a host THROUGH the proxy from inside the internal network.
+
+    allowed=True expects success (model host); allowed=False expects the proxy to
+    deny egress (any other host).
+    """
+    network = network or config.SANDBOX_NETWORK
+    proxy = config.SANDBOX_HTTPS_PROXY
+    return [
+        "docker", "run", "--rm", "--network", network, config.SANDBOX_IMAGE,
+        "sh", "-lc", f"curl -sS -m 10 -o /dev/null -w '%{{http_code}}' -x {proxy} https://{host}/",
+    ]
 
 
 def docker_smoke_argv(worktree, *, network: str | None = None) -> list:

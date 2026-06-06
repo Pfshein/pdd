@@ -70,13 +70,55 @@ def test_dockerfile_uses_node_22_stage():
     assert "npm-cli.js" in dockerfile
 
 
-def test_docker_network_create_argv(monkeypatch):
-    monkeypatch.setattr(config, "SANDBOX_NETWORK", "pdd-egress-test")
+def test_docker_network_create_argv_is_internal(monkeypatch):
+    monkeypatch.setattr(config, "SANDBOX_NETWORK", "pdd-internal-test")
     assert sandbox.docker_network_create_argv() == [
-        "docker", "network", "create", "pdd-egress-test"
+        "docker", "network", "create", "--internal", "pdd-internal-test"
     ]
     assert sandbox.docker_network_inspect_argv() == [
-        "docker", "network", "inspect", "pdd-egress-test"
+        "docker", "network", "inspect", "pdd-internal-test"
+    ]
+
+
+def test_network_is_internal_parses_docker_output(monkeypatch):
+    def fake_run(cmd, **kw):
+        return subprocess.CompletedProcess(cmd, 0, "true\n", "")
+    monkeypatch.setattr(sandbox.subprocess, "run", fake_run)
+    assert sandbox.network_is_internal("net") is True
+
+    monkeypatch.setattr(
+        sandbox.subprocess, "run",
+        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, "false\n", ""),
+    )
+    assert sandbox.network_is_internal("net") is False
+
+    monkeypatch.setattr(
+        sandbox.subprocess, "run",
+        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, "", "No such network"),
+    )
+    assert sandbox.network_is_internal("net") is None
+
+
+def test_render_squid_conf_allowlists_only_given_hosts():
+    conf = sandbox.render_squid_conf(["opencode.ai"])
+    assert "acl allowed_dst dstdomain .opencode.ai" in conf
+    assert "http_access allow allowed_dst" in conf
+    assert "http_access deny all" in conf  # default-deny
+
+
+def test_proxy_run_and_connect_argv(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "SANDBOX_PROXY_NAME", "pdd-proxy")
+    monkeypatch.setattr(config, "SANDBOX_NETWORK", "pdd-internal")
+    monkeypatch.setattr(config, "SANDBOX_EXTERNAL_NETWORK", "bridge")
+    monkeypatch.setattr(config, "SANDBOX_PROXY_IMAGE", "ubuntu/squid:latest")
+
+    run_argv = sandbox.proxy_run_argv(conf_path=tmp_path / "squid.conf")
+    assert run_argv[:6] == ["docker", "run", "-d", "--rm", "--name", "pdd-proxy"]
+    assert "--network" in run_argv and "pdd-internal" in run_argv
+    assert any(a.endswith(":/etc/squid/squid.conf:ro") for a in run_argv)
+
+    assert sandbox.proxy_connect_external_argv() == [
+        "docker", "network", "connect", "bridge", "pdd-proxy"
     ]
 
 
@@ -126,6 +168,24 @@ def test_run_in_sandbox_no_teardown_on_success(tmp_path, monkeypatch):
 
     assert res["timed_out"] is False
     assert calls == []  # --rm handles cleanup; no force-remove on success
+
+
+def test_test_run_uses_no_network_in_docker(tmp_path, monkeypatch):
+    from orchestrator import testrun
+
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(sandbox, "ensure_ready", lambda: "docker")
+    captured = {}
+
+    def fake_run_in_sandbox(cmd, worktree, **kw):
+        captured.update(kw)
+        return {"exit_code": 0, "stdout": "", "stderr": "", "timed_out": False, "container": "pdd-x"}
+
+    monkeypatch.setattr(sandbox, "run_in_sandbox", fake_run_in_sandbox)
+
+    res = testrun.run_tests("JOB-NET", tmp_path, "python -m pytest -q")
+    assert captured.get("network") == "none"  # tests get NO egress
+    assert res["status"] == "green"
 
 
 def test_unsandboxed_test_run_writes_security_artifact(tmp_path, monkeypatch):
