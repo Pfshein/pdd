@@ -13,6 +13,7 @@ Invariant is fail-closed: no Docker and no explicit override -> executing stages
 refuse to start (raise SandboxUnavailable).
 """
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import time
@@ -73,6 +74,39 @@ def ensure_ready() -> str:
 # Credentials forwarded into the container BY NAME (docker reads the value from
 # this process's env), so the secret value never appears in any argv.
 DEFAULT_ENV_PASSTHROUGH = ("OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL")
+
+
+def docker_build_argv(*, image: str | None = None, dockerfile=None, context=None,
+                      qwen_package: str | None = None) -> list:
+    """Assemble `docker build` for the sandbox image."""
+    image = image or config.SANDBOX_IMAGE
+    dockerfile = Path(dockerfile) if dockerfile else config.ROOT / "sandbox" / "Dockerfile"
+    context = Path(context) if context else config.ROOT
+    argv = ["docker", "build", "-t", image, "-f", str(dockerfile)]
+    if qwen_package:
+        argv += ["--build-arg", f"QWEN_NPM_PACKAGE={qwen_package}"]
+    argv += [str(context)]
+    return argv
+
+
+def docker_network_create_argv(*, network: str | None = None) -> list:
+    """Create the named bridge network if it does not exist."""
+    network = network or config.SANDBOX_NETWORK
+    return ["docker", "network", "create", network]
+
+
+def docker_network_inspect_argv(*, network: str | None = None) -> list:
+    network = network or config.SANDBOX_NETWORK
+    return ["docker", "network", "inspect", network]
+
+
+def docker_smoke_argv(worktree, *, network: str | None = None) -> list:
+    """A cheap smoke command that proves /work is writable inside the sandbox."""
+    return docker_run_argv(
+        ["sh", "-lc", "python --version && node --version && qwen --version && touch /work/.pdd-smoke"],
+        worktree,
+        network=network,
+    )
 
 
 def docker_run_argv(container_cmd, worktree, *, env_passthrough=DEFAULT_ENV_PASSTHROUGH,

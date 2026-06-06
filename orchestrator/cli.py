@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import artifacts, config, run as run_mod, state as state_mod, worktree
+from . import artifacts, config, run as run_mod, sandbox, state as state_mod, worktree
 from .graph import DONE
 
 
@@ -121,6 +121,37 @@ def cmd_cleanup(args) -> int:
     return 0
 
 
+def _run_command(argv: list[str]) -> int:
+    from subprocess import run
+
+    print(" ".join(argv), flush=True)
+    return run(argv).returncode
+
+
+def cmd_sandbox_build(args) -> int:
+    argv = sandbox.docker_build_argv(
+        image=args.image,
+        qwen_package=args.qwen_package,
+    )
+    return _run_command(argv)
+
+
+def cmd_sandbox_network(args) -> int:
+    from subprocess import run
+
+    inspect = sandbox.docker_network_inspect_argv(network=args.network)
+    if run(inspect, capture_output=True).returncode == 0:
+        print(f"sandbox network already exists: {args.network or config.SANDBOX_NETWORK}")
+        return 0
+    argv = sandbox.docker_network_create_argv(network=args.network)
+    return _run_command(argv)
+
+
+def cmd_sandbox_smoke(args) -> int:
+    argv = sandbox.docker_smoke_argv(args.worktree, network=args.network)
+    return _run_command(argv)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="PDD pipeline CLI.")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -153,6 +184,20 @@ def build_parser() -> argparse.ArgumentParser:
     cleanup_p.add_argument("job")
     cleanup_p.add_argument("--repo", default=None)
     cleanup_p.set_defaults(func=cmd_cleanup)
+
+    build_p = sub.add_parser("sandbox-build", help="build the Docker sandbox image")
+    build_p.add_argument("--image", default=None, help=f"default: {config.SANDBOX_IMAGE}")
+    build_p.add_argument("--qwen-package", default=None, help="override npm package for qwen")
+    build_p.set_defaults(func=cmd_sandbox_build)
+
+    network_p = sub.add_parser("sandbox-network", help="create the Docker sandbox network")
+    network_p.add_argument("--network", default=None, help=f"default: {config.SANDBOX_NETWORK}")
+    network_p.set_defaults(func=cmd_sandbox_network)
+
+    smoke_p = sub.add_parser("sandbox-smoke", help="run a cheap sandbox smoke test")
+    smoke_p.add_argument("worktree", help="writable directory mounted as /work")
+    smoke_p.add_argument("--network", default=None, help=f"default: {config.SANDBOX_NETWORK}")
+    smoke_p.set_defaults(func=cmd_sandbox_smoke)
     return p
 
 
