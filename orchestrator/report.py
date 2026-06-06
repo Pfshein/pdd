@@ -6,7 +6,7 @@ warning. Read-only over the job dir; no model calls.
 """
 import json
 
-from . import artifacts, state as state_mod
+from . import artifacts, events, state as state_mod
 
 
 def _read_transitions(job: str) -> list:
@@ -48,6 +48,7 @@ def build_report(job: str) -> str:
     transitions = _read_transitions(job)
     attempts = state_mod.read_attempts(job)
     sandbox_audit = _read_jsonl_artifact(job, "sandbox_audit.jsonl")
+    event_rows = events.read(job)
 
     out = [
         f"# PDD report: {job}",
@@ -85,6 +86,18 @@ def build_report(job: str) -> str:
                 f"network `{row.get('network')}`, seccomp `{row.get('seccomp')}`, "
                 f"exit {row.get('exit_code')}, timed_out={row.get('timed_out')}"
             )
+
+    if event_rows:
+        out += ["", "## Events"]
+        for row in event_rows[-15:]:
+            bits = [row.get("event")]
+            if row.get("stage"):
+                bits.append(f"stage={row['stage']}")
+            if row.get("duration_ms") is not None:
+                bits.append(f"{row['duration_ms']}ms")
+            if row.get("reason"):
+                bits.append(f"reason={row['reason']}")
+            out.append("- " + " ".join(str(b) for b in bits if b))
 
     out += ["", "## Last verdict"]
     issues = verdict.get("issues", [])

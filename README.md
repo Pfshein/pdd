@@ -85,6 +85,9 @@ runs/<JOB>/              # state, transitions, attempts, plan, diff, verdict, te
 %TEMP%/pdd-worktrees/<JOB>  # рабочий git worktree задачи
 ```
 
+`events.jsonl` внутри `runs/<JOB>/` — единый структурный timeline job: старт/конец run,
+старт/конец стадий, transition, duration и короткий summary результата.
+
 Docker — внутренняя граница исполнения для опасных стадий (`CODER`, `TESTER`, `TEST_RUN`),
 а не место, куда пользователь должен заходить руками. Оркестратор, маршрутизация,
 артефакты и CLI остаются на хосте.

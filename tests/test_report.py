@@ -54,6 +54,20 @@ def test_sandbox_audit_section(tmp_path, monkeypatch):
     assert "container `pdd-x`" in md
 
 
+def test_events_section(tmp_path, monkeypatch):
+    _seed("JOB-EVENTS", monkeypatch, tmp_path)
+    artifacts.write_text(
+        "JOB-EVENTS",
+        "events.jsonl",
+        '{"job":"JOB-EVENTS","event":"stage_end","stage":"TEST_RUN","duration_ms":42,"reason":"tests green"}\n',
+    )
+
+    md = report.build_report("JOB-EVENTS")
+
+    assert "## Events" in md
+    assert "stage_end stage=TEST_RUN 42ms reason=tests green" in md
+
+
 def test_escalation_only_for_needs_human(tmp_path, monkeypatch):
     _seed("JOB-ESC", monkeypatch, tmp_path)  # node == DONE
     artifacts.write_text("JOB-ESC", "escalation.md", "stale escalation")

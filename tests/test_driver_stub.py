@@ -92,7 +92,7 @@ def test_intake_failure_escalates():
 
 
 def test_persistence_writes_artifacts(tmp_path, monkeypatch):
-    from orchestrator import config, state as state_mod
+    from orchestrator import config, events, state as state_mod
     monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
     script = {
         g.INTAKE: [{"status": "ok"}],
@@ -108,3 +108,7 @@ def test_persistence_writes_artifacts(tmp_path, monkeypatch):
     assert (jd / "state.json").exists()
     assert (jd / "transitions.jsonl").exists()
     assert (jd / "attempts.jsonl").exists()
+    rows = events.read("PERSIST-1")
+    assert rows[0]["event"] == "job_start"
+    assert any(r["event"] == "stage_end" and r.get("stage") == g.TEST_RUN for r in rows)
+    assert rows[-1]["event"] == "job_end"
