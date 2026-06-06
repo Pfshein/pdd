@@ -135,6 +135,23 @@ def cmd_publish(args) -> int:
     return 0 if res.get("committed") else 1
 
 
+def cmd_report(args) -> int:
+    from . import report as report_mod
+
+    job = state_mod.validate_job_id(args.job)
+    if not (state_mod.job_dir(job) / "state.json").exists():
+        print(f"no job state for {job}", file=sys.stderr)
+        return 2
+    md = report_mod.build_report(job)
+    artifacts.write_text(job, "report.md", md)  # also keep it as an artifact
+    if args.out:
+        Path(args.out).write_text(md, encoding="utf-8")
+        print(f"report written to {args.out}")
+    else:
+        print(md)
+    return 0
+
+
 def cmd_resume(args) -> int:
     try:
         final = run_mod.resume_pipeline(args.job)
@@ -260,6 +277,11 @@ def build_parser() -> argparse.ArgumentParser:
     publish_p.add_argument("--base", default=None, help="PR base branch (default: job base_ref)")
     publish_p.add_argument("--message", default=None, help="commit title override")
     publish_p.set_defaults(func=cmd_publish)
+
+    report_p = sub.add_parser("report", help="render a human-readable job report (Markdown)")
+    report_p.add_argument("job")
+    report_p.add_argument("--out", default=None, help="write to a file instead of stdout")
+    report_p.set_defaults(func=cmd_report)
 
     resume_p = sub.add_parser("resume", help="continue a job from its saved state")
     resume_p.add_argument("job")
