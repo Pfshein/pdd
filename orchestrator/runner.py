@@ -17,10 +17,15 @@ QWEN_EXIT_LIMIT = 55  # qwen aborts with 55 when wall-time / tool-calls exceeded
 
 
 def stage_env(extra: dict | None = None) -> dict:
-    """Full child environment = inherited env + OPENAI_* creds (+ overrides)."""
+    """Full child environment = inherited env + OPENAI_* creds (+ overrides).
+
+    The API key is delivered ONLY here (env), never on argv — argv is visible in
+    ps / /proc/<pid>/cmdline and tends to leak into logs. We do NOT suppress the
+    yolo "no sandbox" warning: per the sandbox invariant (#1) an executing stage
+    refuses to start without isolation, so there is nothing to silence.
+    """
     env = dict(os.environ)
     env.update({k: v for k, v in config.model_env().items() if v})
-    env.setdefault("QWEN_CODE_SUPPRESS_YOLO_WARNING", "1")
     if extra:
         env.update(extra)
     return env
@@ -56,7 +61,6 @@ def build_qwen_argv(
     *,
     model: str,
     base_url: str,
-    api_key: str,
     approval: str = "yolo",
     json_schema: str | None = None,
     output_format: str | None = None,
@@ -70,6 +74,9 @@ def build_qwen_argv(
     The prompt is NOT a positional arg — it is fed via stdin. Array-type qwen
     options (e.g. --exclude-tools) otherwise greedily swallow a trailing
     positional prompt. stdin decouples the prompt from arg parsing entirely.
+
+    The API key is intentionally absent here — it goes via env only (see
+    stage_env). model/base_url are not secrets and stay as flags.
     """
     argv = [
         QWEN_BIN,
@@ -77,7 +84,6 @@ def build_qwen_argv(
         "--approval-mode", approval,
         "-m", model,
         "--openai-base-url", base_url,
-        "--openai-api-key", api_key,
     ]
     if wall_time_s:
         argv += ["--max-wall-time", str(wall_time_s)]
@@ -118,7 +124,6 @@ def run_qwen_stage(
     argv = build_qwen_argv(
         model=creds["OPENAI_MODEL"],
         base_url=creds["OPENAI_BASE_URL"],
-        api_key=creds["OPENAI_API_KEY"],
         approval=approval,
         json_schema=json_schema,
         output_format=output_format,

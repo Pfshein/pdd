@@ -1,0 +1,7 @@
+# Optional: `pre-commit install` to run gitleaks on every commit.
+# The native .githooks/pre-commit guard works without this framework.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks

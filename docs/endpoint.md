@@ -5,13 +5,18 @@
 ## Запуск стадии
 
 ```
+OPENAI_API_KEY=<key> \            # КЛЮЧ ТОЛЬКО через env, не в argv (утечка в ps/cmdline)
 qwen --bare --approval-mode yolo -m big-pickle \
-     --openai-base-url <url> --openai-api-key <key> \
+     --openai-base-url <url> \
      --max-wall-time <s> --max-tool-calls <N> \
      [--json-schema @schemas/verdict.json -o json] [--json-file events.jsonl] \
      [--exclude-tools a,b,c]
 # промпт подаётся через STDIN, не позиционно
 ```
+
+> ✓ Подтверждено: qwen берёт `OPENAI_API_KEY` из env процесса **даже с `--bare`** —
+> `--openai-api-key` в argv не нужен (и убран ради безопасности). `model`/`base_url` —
+> не секреты, остаются флагами.
 
 ## Подтверждённые факты / грабли
 

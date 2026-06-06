@@ -1,0 +1,21 @@
+#!/bin/sh
+# PDD secret guard: block commits that introduce obvious credentials.
+# .gitignore stops files from being committed; this stops secrets pasted into
+# tracked files. Enable with:  git config core.hooksPath .githooks
+set -eu
+
+patterns='(sk-[A-Za-z0-9_-]{16,}|github_pat_[A-Za-z0-9_]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|OPENAI_API_KEY=["'\'']?[A-Za-z0-9]{8,})'
+
+# Only inspect newly added lines in the staged diff.
+added=$(git diff --cached --no-color -U0 | grep '^+' | grep -vE '^\+\+\+' || true)
+
+if printf '%s\n' "$added" | grep -Eq "$patterns"; then
+  echo "------------------------------------------------------------"
+  echo "  pre-commit: a potential secret was found in staged changes."
+  echo "  Remove it (use .qwen/.env, which is gitignored) and re-stage."
+  echo "  Matched one of: sk-*, github_pat_*, ghp_*, AKIA*, PRIVATE KEY,"
+  echo "  OPENAI_API_KEY=<value>."
+  echo "------------------------------------------------------------"
+  exit 1
+fi
+exit 0
