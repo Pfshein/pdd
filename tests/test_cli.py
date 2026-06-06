@@ -1,7 +1,7 @@
 """CLI inspection commands for the user-facing job flow."""
 import json
 
-from orchestrator import cli, config, sandbox, state as state_mod
+from orchestrator import cli, config, run as run_mod, sandbox, state as state_mod
 
 
 def test_status_prints_job_summary(tmp_path, monkeypatch, capsys):
@@ -79,3 +79,21 @@ def test_proxy_up_renders_conf_and_starts_proxy(monkeypatch, tmp_path):
     assert (tmp_path / "squid.conf").exists()
     assert any(c[:3] == ["docker", "run", "-d"] for c in calls)
     assert any(c[:4] == ["docker", "network", "connect", "bridge"] for c in calls)
+
+
+def test_cli_resume_invokes_resume(monkeypatch, capsys):
+    monkeypatch.setattr(run_mod, "resume_pipeline", lambda job: {"node": "DONE"})
+    assert cli.main(["resume", "JOB"]) == 0
+    assert "JOB -> DONE" in capsys.readouterr().out
+
+
+def test_cli_retry_invokes_retry(monkeypatch, capsys):
+    seen = {}
+
+    def fake_retry(job, stage):
+        seen["stage"] = stage
+        return {"node": "DONE"}
+
+    monkeypatch.setattr(run_mod, "retry_pipeline", fake_retry)
+    assert cli.main(["retry", "JOB", "--stage", "CODER"]) == 0
+    assert seen["stage"] == "CODER"

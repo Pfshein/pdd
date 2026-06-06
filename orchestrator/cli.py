@@ -135,6 +135,26 @@ def cmd_publish(args) -> int:
     return 0 if res.get("committed") else 1
 
 
+def cmd_resume(args) -> int:
+    try:
+        final = run_mod.resume_pipeline(args.job)
+    except run_mod.ResumeError as exc:
+        print(f"resume failed: {exc}", file=sys.stderr)
+        return 2
+    print(f"{args.job} -> {final['node']}")
+    return 0 if final["node"] == DONE else 2
+
+
+def cmd_retry(args) -> int:
+    try:
+        final = run_mod.retry_pipeline(args.job, args.stage)
+    except run_mod.ResumeError as exc:
+        print(f"retry failed: {exc}", file=sys.stderr)
+        return 2
+    print(f"{args.job} -> {final['node']}")
+    return 0 if final["node"] == DONE else 2
+
+
 def _run_command(argv: list[str]) -> int:
     from subprocess import run
 
@@ -240,6 +260,15 @@ def build_parser() -> argparse.ArgumentParser:
     publish_p.add_argument("--base", default=None, help="PR base branch (default: job base_ref)")
     publish_p.add_argument("--message", default=None, help="commit title override")
     publish_p.set_defaults(func=cmd_publish)
+
+    resume_p = sub.add_parser("resume", help="continue a job from its saved state")
+    resume_p.add_argument("job")
+    resume_p.set_defaults(func=cmd_resume)
+
+    retry_p = sub.add_parser("retry", help="rewind a job to a stage and drive forward")
+    retry_p.add_argument("job")
+    retry_p.add_argument("--stage", required=True, help="stage to re-run from (e.g. CODER)")
+    retry_p.set_defaults(func=cmd_retry)
 
     build_p = sub.add_parser("sandbox-build", help="build the Docker sandbox image")
     build_p.add_argument("--image", default=None, help=f"default: {config.SANDBOX_IMAGE}")
