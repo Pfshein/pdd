@@ -47,6 +47,7 @@
 run --job --repo --task --meta [--setup-command --test-command --base-ref --drop-worktree]
 status | show | diff | cleanup | publish [--push --pr --base --message] | report [--out]
 resume <JOB> | retry <JOB> --stage CODER | reap [--apply --ttl] | doctor
+intake-jira --issue issue.json --out <dir> | jira-comment-draft <JOB>
 sandbox-build | sandbox-network | sandbox-smoke | proxy-up | proxy-status | proxy-smoke
 setup-proxy-up | setup-proxy-status
 ```
@@ -70,12 +71,13 @@ setup-proxy-up | setup-proxy-status
 | PDD-15 | зависимости проекта в sandbox: `--setup-command` + отдельный setup proxy |
 | PDD-16 | job hygiene: `reap`, TTL cleanup, fresh per-run artifacts |
 | PDD-12 | sandbox hardening: opt-in seccomp + `sandbox_audit.jsonl` |
+| PDD-17 | structured events: `events.jsonl` job timeline |
 
 **Гейт (PDD-11) доказал**: qwen уважает `HTTPS_PROXY` (модель достижима ТОЛЬКО через прокси),
 egress-allowlist работает (allowed→200, denied→403), полный конвейер в Docker → DONE, без
 утечек и осиротевших контейнеров. Прокси-подход рабочий — сетевой фильтр не нужен.
 
-Тесты: **122 passed** (`python -m pytest -q`). Образ `pdd-sandbox:latest`, сеть `pdd-internal`,
+Тесты: **126 passed** (`python -m pytest -q`). Образ `pdd-sandbox:latest`, сеть `pdd-internal`,
 прокси `pdd-proxy` уже подняты на машине.
 
 ## Конвенции
@@ -116,10 +118,10 @@ no-new-priv/non-root уже есть.)
 убирать worktree; `_reset_job_logs` расширить до очистки per-run артефактов.
 Файлы: `run.py`, новый `reaper.py`, `cli.py`, тесты.
 
-### 4. PDD-07 — Jira intake  *(нужен подключённый Jira MCP)*
-Реальный `INTAKE` через Jira MCP: по ключу тянуть issue → нормализованные `task.md` +
-`task_meta.json`; при `NEEDS_HUMAN` — драфт Jira-коммента. Промпт `prompts/intake.md` готов.
-Не коммитить Jira-креды. Файлы: `stages.py::_intake`, `run.py`, новый `jira.py`.
+### 4. PDD-07 — Jira intake  *(в работе)*
+Jira adapter boundary: нормализовать issue JSON → `task.md` + `task_meta.json`; при
+`NEEDS_HUMAN` — драфт Jira-коммента. Реальный Jira MCP позже должен только поставлять issue JSON.
+Не коммитить Jira-креды. Файлы: новый `jira.py`, `cli.py`, тесты.
 
 ### 5. #3 — портабельность контракта  *(нужен локальный OpenAI-эндпоинт)*
 Перепрогнать `tools/probe_review.py` + `probe_limits.py` против локального сервера
@@ -131,7 +133,7 @@ no-new-priv/non-root уже есть.)
 correlation id. Решить хранилище состояния (файлы → возможно sqlite). Файлы: новый `queue.py`,
 `run.py`, `cli.py` (`worker`/`enqueue`).
 
-### 7. PDD-17 — наблюдаемость: структурный лог с correlation id  *(в работе)*
+### 7. PDD-17 — наблюдаемость: структурный лог с correlation id  *(готово)*
 Единый JSONL-лог событий джоба (старт/конец run, стадия, длительность, transition, status/limit,
 sandbox summary) с ключом job/Jira во всех строках. Подключить к `report`.
 Файлы: новый `events.py`, `driver.py`, `run.py`, `report.py`, тесты.
@@ -142,8 +144,8 @@ sandbox summary) с ключом job/Jira во всех строках. Подк
 
 ### 9. (бэклог) settings.json/конфиг-профили, web-UI/status-дашборд, ретеншн артефактов.
 
-**Рекомендуемый порядок:** 7 (логи) → 4 (Jira) →
+**Рекомендуемый порядок:** 4 (Jira) →
 6 (очередь) → 8 (боевой e2e). #5 — когда появится локальный эндпоинт.
 
 **Первый шаг для следующей сессии:** `git switch main && git pull --ff-only &&
-git switch -c PDD-17-structured-events` и реализовать задачу 7.
+git switch -c PDD-07-jira-intake-adapter` и реализовать задачу 4.
