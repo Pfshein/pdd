@@ -8,6 +8,7 @@ Two guards (see plan §4):
 import os
 import shutil
 import subprocess
+import sys
 
 from . import config
 from .killtree import popen_kwargs, kill_tree
@@ -68,6 +69,7 @@ def build_qwen_argv(
     wall_time_s: int | None = None,
     max_tool_calls: int | None = None,
     extra: list | None = None,
+    qwen_bin: str | None = None,
 ) -> list:
     """Assemble the qwen CLI argv for a stage (plan §3).
 
@@ -79,7 +81,7 @@ def build_qwen_argv(
     stage_env). model/base_url are not secrets and stay as flags.
     """
     argv = [
-        QWEN_BIN,
+        qwen_bin or QWEN_BIN,  # "qwen" inside the sandbox image; host path otherwise
         "--bare",
         "--approval-mode", approval,
         "-m", model,
@@ -104,6 +106,7 @@ def run_qwen_stage(
     prompt: str,
     *,
     cwd=None,
+    isolate: bool = False,
     approval: str = "yolo",
     json_schema: str | None = None,
     output_format: str | None = None,
@@ -115,9 +118,17 @@ def run_qwen_stage(
     """High-level: build argv from config creds and run with the outer watchdog.
 
     approval defaults to "yolo": the zen endpoint has no auto-mode classifier,
-    so --approval-mode auto blocks every tool call ("Classifier stage 1
-    unavailable"). yolo auto-approves; safety comes from the sandbox + worktree.
+    so --approval-mode auto blocks every tool call. yolo auto-approves; the real
+    safety boundary is the sandbox (`isolate=True`), not yolo.
+
+    isolate=True (executing stages: coder/tester): run qwen INSIDE the sandbox
+    container. Fail-closed via sandbox.ensure_ready() — no Docker and no override
+    -> SandboxUnavailable, the stage does not start.
     """
+    from . import sandbox  # lazy: avoid import cycle
+
+    mode = sandbox.ensure_ready() if isolate else "host"
+
     creds = config.model_env()
     wall = wall_time_s if wall_time_s is not None else config.STAGE_WALL_TIME_S
     tools = max_tool_calls if max_tool_calls is not None else config.STAGE_MAX_TOOL_CALLS
@@ -131,10 +142,22 @@ def run_qwen_stage(
         wall_time_s=wall,
         max_tool_calls=tools,
         extra=extra,
+        qwen_bin="qwen" if mode == "docker" else None,
     )
     outer_timeout = wall + config.STAGE_KILL_MARGIN_S
-    result = run_process(
-        argv, cwd=cwd, env=stage_env(), timeout_s=outer_timeout, stdin_input=prompt
-    )
+
+    if mode == "docker":
+        result = sandbox.run_in_sandbox(argv, worktree=cwd, stdin=prompt, timeout=outer_timeout)
+    else:
+        if mode == "UNSANDBOXED":
+            sys.stderr.write(
+                "!! PDD SECURITY: executing stage running WITHOUT sandbox "
+                "(PDD_ALLOW_UNSANDBOXED). The agent has full host privileges.\n"
+            )
+        result = run_process(
+            argv, cwd=cwd, env=stage_env(), timeout_s=outer_timeout, stdin_input=prompt
+        )
+
     result["argv"] = argv
+    result["sandbox"] = mode
     return result
