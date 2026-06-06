@@ -48,6 +48,9 @@ def decide_next(node: str, result: dict, state: dict):
 # test). Only complaints feed the no-progress detector; forward progress does
 # not, even when it enters a return-target stage.
 def _intended_next(node: str, result: dict, s: dict):
+    if result.get("status") == "error":
+        return NEEDS_HUMAN, f"{node} failed", False
+
     if node == INTAKE:
         if result.get("status") == "ok":
             return TRIAGE, "intake ok", False

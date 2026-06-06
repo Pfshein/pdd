@@ -26,6 +26,12 @@ def test_intake_fail_goes_to_human():
     assert nxt == g.NEEDS_HUMAN
 
 
+def test_stage_error_goes_to_human():
+    nxt, reason, _ = decide_next(g.CODE_REVIEW, {"status": "error", "error": "bad json"}, base_state())
+    assert nxt == g.NEEDS_HUMAN
+    assert "failed" in reason
+
+
 def test_triage_simple_skips_architect():
     nxt, _, s = decide_next(g.TRIAGE, {"triage": "simple"}, base_state())
     assert nxt == g.CODER

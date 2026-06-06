@@ -6,7 +6,7 @@ jobs never collide and the reviewer gets a real unified diff for free.
 import subprocess
 from pathlib import Path
 
-from . import config
+from . import config, state as state_mod
 
 
 def _git(args, cwd):
@@ -21,10 +21,12 @@ def _git(args, cwd):
 
 
 def branch_name(job: str) -> str:
+    job = state_mod.validate_job_id(job)
     return f"pdd/{job}"
 
 
 def worktree_path(job: str) -> Path:
+    job = state_mod.validate_job_id(job)
     return config.WORKTREES_DIR / job
 
 

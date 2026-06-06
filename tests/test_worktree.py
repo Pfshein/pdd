@@ -46,3 +46,8 @@ def test_create_is_idempotent(target_repo):
     wt, _, _ = worktree.create(target_repo, "JOB-2")
     assert wt.exists()
     worktree.remove(target_repo, "JOB-2")
+
+
+def test_rejects_unsafe_job_id(target_repo):
+    with pytest.raises(ValueError):
+        worktree.create(target_repo, "../NOPE")
