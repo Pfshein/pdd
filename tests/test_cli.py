@@ -108,3 +108,19 @@ def test_cli_retry_invokes_retry(monkeypatch, capsys):
     monkeypatch.setattr(run_mod, "retry_pipeline", fake_retry)
     assert cli.main(["retry", "JOB", "--stage", "CODER"]) == 0
     assert seen["stage"] == "CODER"
+
+
+def test_cli_reap_defaults_to_dry_run(monkeypatch, capsys):
+    from orchestrator import reaper
+
+    seen = {}
+
+    def fake_reap(**kwargs):
+        seen.update(kwargs)
+        return [{"job": "JOB-OLD", "action": "would-reap"}]
+
+    monkeypatch.setattr(reaper, "reap", fake_reap)
+
+    assert cli.main(["reap", "--ttl", "10"]) == 0
+    assert seen == {"dry_run": True, "ttl_s": 10}
+    assert "would-reap" in capsys.readouterr().out

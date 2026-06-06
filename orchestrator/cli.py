@@ -181,6 +181,17 @@ def cmd_retry(args) -> int:
     return 0 if final["node"] == DONE else 2
 
 
+def cmd_reap(args) -> int:
+    from . import reaper
+
+    rows = reaper.reap(dry_run=not args.apply, ttl_s=args.ttl)
+    if not rows:
+        print("no stale jobs")
+        return 0
+    print(json.dumps(rows, indent=2, ensure_ascii=False))
+    return 0
+
+
 def _run_command(argv: list[str]) -> int:
     from subprocess import run
 
@@ -317,6 +328,11 @@ def build_parser() -> argparse.ArgumentParser:
     retry_p.add_argument("job")
     retry_p.add_argument("--stage", required=True, help="stage to re-run from (e.g. CODER)")
     retry_p.set_defaults(func=cmd_retry)
+
+    reap_p = sub.add_parser("reap", help="mark stale jobs NEEDS_HUMAN and remove their worktrees")
+    reap_p.add_argument("--apply", action="store_true", help="perform cleanup; default is dry-run")
+    reap_p.add_argument("--ttl", type=int, default=None, help=f"default: {config.JOB_TTL_S}s")
+    reap_p.set_defaults(func=cmd_reap)
 
     build_p = sub.add_parser("sandbox-build", help="build the Docker sandbox image")
     build_p.add_argument("--image", default=None, help=f"default: {config.SANDBOX_IMAGE}")

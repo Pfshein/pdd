@@ -61,6 +61,7 @@ python -m orchestrator.cli run --job DEMO-1 --repo <repo> --task task.md --meta 
 python -m orchestrator.cli status DEMO-1
 python -m orchestrator.cli show DEMO-1
 python -m orchestrator.cli diff DEMO-1
+python -m orchestrator.cli reap                 # dry-run stale job cleanup
 python -m orchestrator.cli cleanup DEMO-1
 ```
 

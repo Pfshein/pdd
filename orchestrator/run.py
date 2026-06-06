@@ -11,6 +11,22 @@ import sys
 from . import artifacts, config, driver, graph, sandbox, stages, state as state_mod, worktree
 from .graph import NEEDS_HUMAN, DONE
 
+PER_RUN_ARTIFACTS = (
+    "transitions.jsonl",
+    "attempts.jsonl",
+    "plan.md",
+    "changes.md",
+    "diff.patch",
+    "verdict.json",
+    "test_result.json",
+    "setup_result.json",
+    "escalation.md",
+    "report.md",
+    "publish.json",
+    "SECURITY.txt",
+    "reaped.json",
+)
+
 
 def _write_escalation(job: str, final: dict) -> None:
     last_verdict = artifacts.read_json(job, "verdict.json", {}) or {}
@@ -33,9 +49,9 @@ def _write_escalation(job: str, final: dict) -> None:
 
 
 def _reset_job_logs(job: str) -> None:
-    """Start the append-only trace fresh on a (re)run of the same job id."""
+    """Start a run fresh when reusing the same job id."""
     jd = state_mod.job_dir(job)
-    for name in ("transitions.jsonl", "attempts.jsonl"):
+    for name in PER_RUN_ARTIFACTS:
         p = jd / name
         if p.exists():
             p.unlink()
