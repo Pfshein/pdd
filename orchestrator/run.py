@@ -8,7 +8,7 @@ import argparse
 import json
 import sys
 
-from . import artifacts, config, driver, sandbox, stages, state as state_mod, worktree
+from . import artifacts, config, driver, graph, sandbox, stages, state as state_mod, worktree
 from .graph import NEEDS_HUMAN, DONE
 
 
@@ -69,6 +69,54 @@ def run_pipeline(job, repo, *, task_md, task_meta, test_command=None,
     if not keep_worktree:
         worktree.remove(repo, job)
     return final
+
+
+class ResumeError(RuntimeError):
+    """A job cannot be resumed/retried from its persisted state."""
+
+
+def _ctx_from_artifacts(job: str, meta: dict) -> dict:
+    """Rebuild the run context from on-disk artifacts (for resume/retry)."""
+    return {
+        "repo": meta["repo"],
+        "base_sha": meta["base_sha"],
+        "task_md": artifacts.read_text(job, "task.md"),
+        "task_meta": artifacts.read_json(job, "task_meta.json", {}) or {},
+        "test_command": meta.get("test_command"),
+    }
+
+
+def _drive(job: str, st: dict) -> dict:
+    meta = artifacts.read_json(job, "job_meta.json")
+    if not meta:
+        raise ResumeError("no job_meta.json — run the job first")
+    if not worktree.worktree_path(job).exists():
+        raise ResumeError("job worktree is gone — re-run instead of resume/retry")
+    final = driver.run_job(st, stages.make_run_node(_ctx_from_artifacts(job, meta)), persist=True)
+    if final["node"] == NEEDS_HUMAN:
+        _write_escalation(job, final)
+    return final
+
+
+def resume_pipeline(job: str) -> dict:
+    """Continue a job from its persisted state.json (after a crash/interrupt)."""
+    job = state_mod.validate_job_id(job)
+    st = state_mod.load_state(job)
+    if st["node"] in (DONE, NEEDS_HUMAN):
+        return st  # already terminal — nothing to resume
+    return _drive(job, st)
+
+
+def retry_pipeline(job: str, stage: str) -> dict:
+    """Rewind a job to a specific stage and drive forward from there."""
+    job = state_mod.validate_job_id(job)
+    stage = stage.upper()
+    if stage not in graph.ORDER:  # ORDER excludes the terminal nodes
+        raise ResumeError(f"unknown stage {stage!r}; choose from {sorted(graph.ORDER)}")
+    st = state_mod.load_state(job)
+    st["node"] = stage
+    state_mod.save_state(st)
+    return _drive(job, st)
 
 
 def main(argv=None) -> int:

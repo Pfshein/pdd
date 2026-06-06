@@ -70,11 +70,10 @@ def record_transition(job: str, frm: str, to: str, reason: str) -> None:
     )
 
 
-def record_attempt(job: str, stage: str, note: str, signature: str | None = None) -> None:
-    _append_jsonl(
-        job_dir(job) / "attempts.jsonl",
-        {"ts": time.time(), "stage": stage, "note": note, "signature": signature},
-    )
+def record_attempt(job: str, stage: str, note: str, signature: str | None = None, **extra) -> None:
+    record = {"ts": time.time(), "stage": stage, "note": note, "signature": signature}
+    record.update({k: v for k, v in extra.items() if v is not None})  # e.g. status, limit
+    _append_jsonl(job_dir(job) / "attempts.jsonl", record)
 
 
 def read_attempts(job: str) -> list[dict]:
