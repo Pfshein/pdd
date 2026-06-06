@@ -17,6 +17,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import time
+import uuid
 
 from . import config
 
@@ -110,11 +111,18 @@ def docker_smoke_argv(worktree, *, network: str | None = None) -> list:
 
 
 def docker_run_argv(container_cmd, worktree, *, env_passthrough=DEFAULT_ENV_PASSTHROUGH,
-                    network=None, extra=None):
-    """Assemble a locked-down `docker run` argv. No secret values embedded."""
+                    network=None, extra=None, name=None):
+    """Assemble a locked-down `docker run` argv. No secret values embedded.
+
+    --init reaps zombie processes inside the container. A unique --name lets the
+    caller stop the container if the outer watchdog has to kill the docker client
+    (killing the client does NOT stop the daemon-owned container).
+    """
     network = network or config.SANDBOX_NETWORK
-    argv = [
-        "docker", "run", "--rm", "-i",
+    argv = ["docker", "run", "--rm", "-i", "--init"]
+    if name:
+        argv += ["--name", str(name)]
+    argv += [
         "-v", f"{os.path.abspath(str(worktree))}:/work",
         "-w", "/work",
         "--read-only", "--tmpfs", "/tmp:exec",
@@ -143,10 +151,33 @@ def docker_run_argv(container_cmd, worktree, *, env_passthrough=DEFAULT_ENV_PASS
     return argv
 
 
+def _force_remove_container(name: str) -> None:
+    """Best-effort stop+remove of a container by name. Never raises."""
+    for cmd in (["docker", "kill", name], ["docker", "rm", "-f", name]):
+        try:
+            subprocess.run(cmd, capture_output=True, timeout=20)
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+
 def run_in_sandbox(container_cmd, worktree, *, stdin=None, timeout=None,
-                   env_passthrough=DEFAULT_ENV_PASSTHROUGH) -> dict:
-    """Run container_cmd inside the sandbox container; return run_process dict."""
+                   env_passthrough=DEFAULT_ENV_PASSTHROUGH, network=None) -> dict:
+    """Run container_cmd inside the sandbox container; return run_process dict.
+
+    The container gets a unique --name. If the outer watchdog times out,
+    run_process kills the `docker run` CLIENT, but the daemon keeps the container
+    running (SIGKILL is not proxied, --rm never fires). We therefore explicitly
+    docker kill/rm it, so the hard-timeout guarantee does not silently leak a
+    running container for the most dangerous stages.
+    """
     from .runner import run_process, stage_env  # lazy: avoid import cycle
 
-    argv = docker_run_argv(container_cmd, worktree, env_passthrough=env_passthrough)
-    return run_process(argv, env=stage_env(), timeout_s=timeout, stdin_input=stdin)
+    name = f"pdd-{uuid.uuid4().hex[:16]}"
+    argv = docker_run_argv(
+        container_cmd, worktree, env_passthrough=env_passthrough, network=network, name=name
+    )
+    result = run_process(argv, env=stage_env(), timeout_s=timeout, stdin_input=stdin)
+    if result.get("timed_out"):
+        _force_remove_container(name)
+    result["container"] = name
+    return result
