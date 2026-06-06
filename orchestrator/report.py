@@ -16,6 +16,13 @@ def _read_transitions(job: str) -> list:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def _read_jsonl_artifact(job: str, name: str) -> list:
+    path = state_mod.job_dir(job) / name
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
 def _diff_stats(diff_text: str):
     files = added = removed = 0
     for line in diff_text.splitlines():
@@ -40,6 +47,7 @@ def build_report(job: str) -> str:
     escalation = artifacts.read_text(job, "escalation.md").strip()
     transitions = _read_transitions(job)
     attempts = state_mod.read_attempts(job)
+    sandbox_audit = _read_jsonl_artifact(job, "sandbox_audit.jsonl")
 
     out = [
         f"# PDD report: {job}",
@@ -68,6 +76,15 @@ def build_report(job: str) -> str:
             tags = " ".join(f"{k}={a[k]}" for k in ("status", "limit") if a.get(k))
             suffix = f"  _[{tags}]_" if tags else ""
             out.append(f"- **{a.get('stage')}**: {a.get('note')}{suffix}")
+
+    if sandbox_audit:
+        out += ["", "## Sandbox audit"]
+        for row in sandbox_audit[-10:]:
+            out.append(
+                f"- **{row.get('stage') or '-'}**: container `{row.get('container')}`, "
+                f"network `{row.get('network')}`, seccomp `{row.get('seccomp')}`, "
+                f"exit {row.get('exit_code')}, timed_out={row.get('timed_out')}"
+            )
 
     out += ["", "## Last verdict"]
     issues = verdict.get("issues", [])

@@ -14,6 +14,8 @@ def _run_setup(job: str, worktree, command: str, mode: str) -> dict:
             timeout=config.SETUP_TIMEOUT_S,
             network=config.SANDBOX_SETUP_NETWORK,
             proxy_url=config.SANDBOX_SETUP_HTTPS_PROXY,
+            job=job,
+            stage="SETUP_COMMAND",
         )
         exit_code = None if res.get("timed_out") else res["exit_code"]
         log = (
@@ -78,7 +80,12 @@ def run_tests(job: str, worktree, command: str | None = None,
         # likely to execute untrusted project code (conftest/tests), so we strip
         # its egress surface entirely.
         res = sandbox.run_in_sandbox(
-            ["sh", "-lc", command], worktree, timeout=config.TEST_TIMEOUT_S, network="none"
+            ["sh", "-lc", command],
+            worktree,
+            timeout=config.TEST_TIMEOUT_S,
+            network="none",
+            job=job,
+            stage="TEST_RUN",
         )
         if res.get("timed_out"):
             exit_code = None
