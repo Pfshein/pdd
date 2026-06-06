@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["issues"],
+  "properties": {
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["class", "summary"],
+        "properties": {
+          "class": {
+            "type": "string",
+            "enum": ["logic_bug", "weak_tests", "wrong_design", "nit"]
+          },
+          "summary": { "type": "string" },
+          "location": { "type": "string" }
+        }
+      }
+    }
+  }
+}

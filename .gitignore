@@ -1,0 +1,18 @@
+# credentials
+.qwen/.env
+*.env
+
+# local editor/agent settings
+.claude/settings.local.json
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# job artifacts / worktrees
+runs/
+worktrees/
+.qwen/worktrees/

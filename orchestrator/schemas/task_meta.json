@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["issue_type"],
+  "properties": {
+    "issue_type": { "type": "string" },
+    "labels": { "type": "array", "items": { "type": "string" } },
+    "description_chars": { "type": "integer" },
+    "estimate": { "type": ["number", "null"] },
+    "summary": { "type": "string" }
+  }
+}
