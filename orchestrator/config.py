@@ -3,11 +3,16 @@
 Plain data + tiny helpers. No classes.
 """
 import os
+import tempfile
 from pathlib import Path
 
 # --- Paths ----------------------------------------------------------------
 ROOT = Path(__file__).resolve().parent.parent
 RUNS_DIR = ROOT / "runs"
+# Worktrees live OUTSIDE the project tree: a worktree nested under ROOT would let
+# a tool run inside it (e.g. pytest) discover ROOT/pytest.ini as an ancestor
+# config and hijack rootdir/testpaths.
+WORKTREES_DIR = Path(tempfile.gettempdir()) / "pdd-worktrees"
 SCHEMAS_DIR = Path(__file__).resolve().parent / "schemas"
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 
@@ -33,7 +38,19 @@ STAGE_MAX_TOOL_CALLS = 40
 JOB_TTL_S = 3600
 
 # --- Test command (deterministic TEST_RUN) --------------------------------
-TEST_COMMAND = os.environ.get("PIPELINE_TEST_COMMAND", "pytest -q")
+# `python -m pytest` instead of bare `pytest`: robust when pytest.exe is not on PATH.
+TEST_COMMAND = os.environ.get("PIPELINE_TEST_COMMAND", "python -m pytest -q")
+TEST_TIMEOUT_S = 300
+
+# --- Per-stage wall-time budgets (seconds, inner qwen guard) --------------
+STAGE_WALL_TIME = {
+    "ARCHITECT": 180,
+    "CODER": 420,
+    "TESTER": 300,
+    "CODE_REVIEW": 180,
+    "FINAL_REVIEW": 180,
+    "INTAKE": 120,
+}
 
 # --- Model credentials ----------------------------------------------------
 def load_env_file(path: Path) -> dict:
