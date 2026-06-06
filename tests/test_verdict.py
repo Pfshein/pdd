@@ -93,6 +93,36 @@ def test_signature_stable_and_diff_sensitive():
     assert s1 != s3  # different diff -> different signature
 
 
+def test_salvage_verdict_from_plain_text():
+    events = [
+        {"type": "assistant", "message": {"content": [
+            {"type": "text", "text": 'My review: {"issues": [{"class": "logic_bug", "summary": "off by one"}]}'}
+        ]}},
+        {"type": "result", "is_error": True, "error": {"message": "plain text instead of structured_output"}},
+    ]
+    obj = verdict.salvage_verdict(json.dumps(events))
+    assert obj is not None
+    assert obj["issues"][0]["class"] == "logic_bug"
+
+
+def test_salvage_rejects_schema_invalid_json():
+    events = [
+        {"type": "assistant", "message": {"content": [
+            {"type": "text", "text": 'noise {"issues": [{"class": "not_a_class", "summary": "x"}]} more'}
+        ]}},
+        {"type": "result", "is_error": True},
+    ]
+    assert verdict.salvage_verdict(json.dumps(events)) is None
+
+
+def test_salvage_returns_none_without_json():
+    events = [
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": "no json here"}]}},
+        {"type": "result", "is_error": True},
+    ]
+    assert verdict.salvage_verdict(json.dumps(events)) is None
+
+
 def test_signature_ignores_nits():
     v_nit = {"issues": [{"class": "logic_bug", "summary": "x"}, {"class": "nit", "summary": "style"}]}
     v_plain = {"issues": [{"class": "logic_bug", "summary": "x"}]}

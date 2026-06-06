@@ -65,6 +65,57 @@ def validate_verdict(obj: dict) -> dict:
     return obj
 
 
+def assistant_text(stdout: str) -> str:
+    """Concatenate all assistant text blocks from the qwen event stream."""
+    try:
+        events = json.loads((stdout or "").strip())
+    except json.JSONDecodeError:
+        return ""
+    parts = []
+    for ev in events if isinstance(events, list) else []:
+        if ev.get("type") == "assistant":
+            for block in (ev.get("message") or {}).get("content", []):
+                if block.get("type") == "text" and block.get("text"):
+                    parts.append(block["text"])
+    return "\n".join(parts)
+
+
+def _iter_json_objects(text: str):
+    """Yield top-level {...} substrings via brace matching (ignores nesting)."""
+    depth, start = 0, None
+    for i, ch in enumerate(text):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}" and depth > 0:
+            depth -= 1
+            if depth == 0 and start is not None:
+                yield text[start:i + 1]
+                start = None
+
+
+def salvage_verdict(stdout: str):
+    """Last-ditch: find a SCHEMA-VALID verdict JSON in the assistant text.
+
+    Used when --json-schema did not yield a structured result (weak models often
+    emit the JSON as plain text instead of calling structured_output). Returns a
+    validated verdict dict or None — never raw/garbage JSON.
+    """
+    best = None
+    for candidate in _iter_json_objects(assistant_text(stdout)):
+        try:
+            obj = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        try:
+            validate_verdict(obj)
+        except jsonschema.ValidationError:
+            continue
+        best = obj  # keep the last valid one
+    return best
+
+
 def blocking_issues(verdict: dict) -> list:
     return [i for i in verdict.get("issues", []) if i.get("class") in graph.BLOCKING_CLASSES]
 
