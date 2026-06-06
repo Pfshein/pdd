@@ -72,6 +72,8 @@ SANDBOX_EXTERNAL_NETWORK = os.environ.get("PDD_SANDBOX_EXTERNAL_NETWORK", "bridg
 SANDBOX_PIDS_LIMIT = int(os.environ.get("PDD_SANDBOX_PIDS", "512"))
 SANDBOX_MEMORY = os.environ.get("PDD_SANDBOX_MEMORY", "2g")
 SANDBOX_CPUS = os.environ.get("PDD_SANDBOX_CPUS", "2")
+# Run the agent container as this non-root user (uid:gid). Empty disables --user.
+SANDBOX_USER = os.environ.get("PDD_SANDBOX_USER", "1000:1000")
 
 # --- Egress allowlist proxy ----------------------------------------------
 # Agents have NO direct egress; they reach ONLY the model endpoint, via a squid

@@ -200,6 +200,8 @@ def docker_run_argv(container_cmd, worktree, *, env_passthrough=DEFAULT_ENV_PASS
     """
     network = network or config.SANDBOX_NETWORK
     argv = ["docker", "run", "--rm", "-i", "--init"]
+    if config.SANDBOX_USER:
+        argv += ["--user", config.SANDBOX_USER]  # non-root inside the container
     if name:
         argv += ["--name", str(name)]
     argv += [

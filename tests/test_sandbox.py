@@ -122,6 +122,24 @@ def test_proxy_run_and_connect_argv(monkeypatch, tmp_path):
     ]
 
 
+def test_docker_run_argv_runs_as_nonroot(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "SANDBOX_USER", "1000:1000")
+    argv = sandbox.docker_run_argv(["qwen"], tmp_path)
+    assert argv[argv.index("--user") + 1] == "1000:1000"
+
+
+def test_docker_run_argv_user_can_be_disabled(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "SANDBOX_USER", "")
+    argv = sandbox.docker_run_argv(["qwen"], tmp_path)
+    assert "--user" not in argv
+
+
+def test_dockerfile_runs_as_nonroot_user():
+    dockerfile = (config.ROOT / "sandbox" / "Dockerfile").read_text(encoding="utf-8")
+    assert "useradd" in dockerfile and "uid 1000" in dockerfile
+    assert "USER pdd" in dockerfile
+
+
 def test_docker_run_argv_has_init_and_optional_name(tmp_path):
     base = sandbox.docker_run_argv(["qwen"], tmp_path)
     assert "--init" in base
