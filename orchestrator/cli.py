@@ -425,7 +425,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if not getattr(args, "func", None):  # bare `pdd` -> show help (menu later)
+    if not getattr(args, "func", None):  # bare `pdd` -> interactive menu in a TTY
+        if sys.stdin.isatty():
+            try:
+                from . import menu
+            except ImportError:
+                pass
+            else:
+                return menu.run()
         parser.print_help()
         return 0
     return args.func(args)
