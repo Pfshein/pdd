@@ -10,6 +10,19 @@ from . import state as state_mod
 
 EVENTS_FILE = "events.jsonl"
 
+# Live subscribers (e.g. the CLI console printer). Each gets every recorded row.
+_subscribers = []
+
+
+def subscribe(fn) -> None:
+    if fn not in _subscribers:
+        _subscribers.append(fn)
+
+
+def unsubscribe(fn) -> None:
+    if fn in _subscribers:
+        _subscribers.remove(fn)
+
 
 def _clean(obj):
     """Keep event rows JSON-serializable and compact."""
@@ -29,6 +42,11 @@ def record(job: str, event: str, **fields) -> dict:
     path = state_mod.job_dir(job) / EVENTS_FILE
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    for fn in list(_subscribers):  # live consumers must never break the run
+        try:
+            fn(row)
+        except Exception:
+            pass
     return row
 
 
