@@ -45,8 +45,9 @@ def test_publish_commits_worktree(repo):
     assert res["committed"]
     assert res["branch"] == "pdd/JOB-P"
     assert res["pushed"] is False
+    # the commit lives in the standalone clone (the per-job checkout), not the source
     log = subprocess.run(["git", "log", "--oneline", "-1", "pdd/JOB-P"],
-                         cwd=repo, capture_output=True, text=True).stdout
+                         cwd=wt, capture_output=True, text=True).stdout
     assert "JOB-P: Fix add()" in log
     assert (state_mod.job_dir("JOB-P") / "publish.json").exists()
 
@@ -60,7 +61,7 @@ def test_publish_excludes_pycache(repo):
     publish.publish("JOB-PYC", push=False)
 
     tree = subprocess.run(["git", "show", "--name-only", "--format=", "pdd/JOB-PYC"],
-                          cwd=repo, capture_output=True, text=True).stdout
+                          cwd=wt, capture_output=True, text=True).stdout
     assert "calc.py" in tree
     assert "__pycache__" not in tree
 

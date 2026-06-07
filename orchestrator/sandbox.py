@@ -277,6 +277,11 @@ def docker_run_argv(container_cmd, worktree, *, env_passthrough=DEFAULT_ENV_PASS
         "-e", "XDG_CACHE_HOME=/tmp/pdd-cache",
         "-e", "NPM_CONFIG_CACHE=/tmp/npm-cache",
         "-e", "PIP_CACHE_DIR=/tmp/pip-cache",
+        # /work is a clone owned by the host user, but the container runs as a
+        # different uid -> git would refuse ("dubious ownership"). Trust it.
+        "-e", "GIT_CONFIG_COUNT=1",
+        "-e", "GIT_CONFIG_KEY_0=safe.directory",
+        "-e", "GIT_CONFIG_VALUE_0=/work",
     ]
     seccomp = _seccomp_security_opt()
     if seccomp:
