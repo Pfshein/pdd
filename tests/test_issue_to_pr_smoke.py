@@ -3,7 +3,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from orchestrator import config, jira, publish, report, runner, state as state_mod, testrun
+from orchestrator import config, jira, publish, report, runner, state as state_mod, testrun, worktree
 from orchestrator import run as run_mod
 
 
@@ -88,7 +88,7 @@ def test_issue_json_to_publish_commit_smoke(tmp_path, monkeypatch):
     assert res["branch"] == "pdd/PROD-18"
     log = subprocess.run(
         ["git", "log", "--oneline", "-1", "pdd/PROD-18"],
-        cwd=repo,
+        cwd=worktree.worktree_path("PROD-18"),
         capture_output=True,
         text=True,
         check=True,
