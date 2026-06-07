@@ -72,7 +72,7 @@ def test_publish_nothing_to_commit(repo):
     res = publish.publish("JOB-EMPTY", push=False)
 
     assert res["committed"] is None
-    assert "nothing to commit" in res.get("note", "")
+    assert "nothing new to commit" in res.get("note", "")
 
 
 def test_publish_requires_job_meta(repo, monkeypatch):
@@ -90,3 +90,34 @@ def test_cli_publish_invokes_publish(monkeypatch, capsys):
     )
     assert cli.main(["publish", "X", "--push"]) == 0
     assert '"committed": "abc"' in capsys.readouterr().out
+
+
+def test_publish_pushes_even_without_new_commit(repo, monkeypatch):
+    _seed_job("JOB-IP", repo)  # no edits -> nothing new to commit
+    monkeypatch.setattr(publish, "_push", lambda wt, branch: True)
+
+    res = publish.publish("JOB-IP", push=True)
+
+    assert res["committed"] is None   # nothing new this call
+    assert res["pushed"] is True      # ...but push still happened (idempotent)
+
+
+def test_publish_reports_pr_create_url(repo, monkeypatch):
+    _git(["remote", "add", "origin", "https://github.com/Pfshein/pdd.git"], repo)
+    wt, _ = _seed_job("JOB-PR", repo)
+    (wt / "calc.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+    monkeypatch.setattr(publish, "_push", lambda wt, branch: True)
+
+    res = publish.publish("JOB-PR", push=True)
+
+    assert res["committed"] and res["pushed"] is True
+    assert res["worktree"] == str(wt)
+    assert res["pr_create_url"] == "https://github.com/Pfshein/pdd/pull/new/pdd/JOB-PR"
+
+
+def test_pr_create_url_parsing():
+    assert publish._pr_create_url("https://github.com/Pfshein/pdd.git", "pdd/T1") == \
+        "https://github.com/Pfshein/pdd/pull/new/pdd/T1"
+    assert publish._pr_create_url("git@github.com:Pfshein/pdd.git", "pdd/T1") == \
+        "https://github.com/Pfshein/pdd/pull/new/pdd/T1"
+    assert publish._pr_create_url("https://gitlab.com/x/y.git", "b") is None
