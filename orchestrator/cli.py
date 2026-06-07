@@ -4,12 +4,27 @@ This is deliberately thin. The orchestrator remains the control plane; Docker is
 an internal execution detail for dangerous stages.
 """
 import argparse
+import contextlib
 import json
 import sys
 from pathlib import Path
 
-from . import artifacts, config, run as run_mod, sandbox, state as state_mod, worktree
+from . import artifacts, config, events, progress, run as run_mod, sandbox, state as state_mod, worktree
 from .graph import DONE
+
+
+@contextlib.contextmanager
+def _live_progress(enabled: bool = True):
+    """Stream stage events to the console for the duration of a blocking run."""
+    if not enabled:
+        yield
+        return
+    sub = progress.console_printer()
+    events.subscribe(sub)
+    try:
+        yield
+    finally:
+        events.unsubscribe(sub)
 
 
 DEFAULT_SHOW = (
@@ -38,16 +53,17 @@ def _print_path(label: str, path: Path) -> None:
 def cmd_run(args) -> int:
     task_md = Path(args.task).read_text(encoding="utf-8")
     task_meta = json.loads(Path(args.meta).read_text(encoding="utf-8"))
-    final = run_mod.run_pipeline(
-        args.job,
-        args.repo,
-        task_md=task_md,
-        task_meta=task_meta,
-        test_command=args.test_command,
-        setup_command=args.setup_command,
-        base_ref=args.base_ref,
-        keep_worktree=not args.drop_worktree,
-    )
+    with _live_progress(not args.quiet):
+        final = run_mod.run_pipeline(
+            args.job,
+            args.repo,
+            task_md=task_md,
+            task_meta=task_meta,
+            test_command=args.test_command,
+            setup_command=args.setup_command,
+            base_ref=args.base_ref,
+            keep_worktree=not args.drop_worktree,
+        )
     print(f"\n=== {args.job} finished at: {final['node']} ===")
     _print_path("worktree", worktree.worktree_path(args.job))
     _print_path("artifacts", state_mod.job_dir(args.job))
@@ -163,7 +179,8 @@ def cmd_doctor(args) -> int:
 
 def cmd_resume(args) -> int:
     try:
-        final = run_mod.resume_pipeline(args.job)
+        with _live_progress(not args.quiet):
+            final = run_mod.resume_pipeline(args.job)
     except run_mod.ResumeError as exc:
         print(f"resume failed: {exc}", file=sys.stderr)
         return 2
@@ -173,7 +190,8 @@ def cmd_resume(args) -> int:
 
 def cmd_retry(args) -> int:
     try:
-        final = run_mod.retry_pipeline(args.job, args.stage)
+        with _live_progress(not args.quiet):
+            final = run_mod.retry_pipeline(args.job, args.stage)
     except run_mod.ResumeError as exc:
         print(f"retry failed: {exc}", file=sys.stderr)
         return 2
@@ -307,6 +325,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--setup-command", default=None, help="dependency install command before TEST_RUN")
     run_p.add_argument("--base-ref", default="HEAD")
     run_p.add_argument("--drop-worktree", action="store_true")
+    run_p.add_argument("--quiet", action="store_true", help="suppress live stage progress")
     run_p.set_defaults(func=cmd_run)
 
     status_p = sub.add_parser("status", help="print job status")
@@ -346,11 +365,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     resume_p = sub.add_parser("resume", help="continue a job from its saved state")
     resume_p.add_argument("job")
+    resume_p.add_argument("--quiet", action="store_true", help="suppress live stage progress")
     resume_p.set_defaults(func=cmd_resume)
 
     retry_p = sub.add_parser("retry", help="rewind a job to a stage and drive forward")
     retry_p.add_argument("job")
     retry_p.add_argument("--stage", required=True, help="stage to re-run from (e.g. CODER)")
+    retry_p.add_argument("--quiet", action="store_true", help="suppress live stage progress")
     retry_p.set_defaults(func=cmd_retry)
 
     reap_p = sub.add_parser("reap", help="mark stale jobs NEEDS_HUMAN and remove their worktrees")
