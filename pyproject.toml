@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pdd"
+version = "0.1.0"
+description = "PDD (Please Drop Database) — self-hosted dev pipeline over a qwen-code fork"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["jsonschema"]
+
+[project.scripts]
+pdd = "orchestrator.cli:main"
+
+[tool.setuptools]
+packages = ["orchestrator"]
+
+[tool.setuptools.package-data]
+orchestrator = ["schemas/*.json", "prompts/*.md"]

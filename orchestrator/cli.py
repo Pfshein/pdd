@@ -6,6 +6,7 @@ an internal execution detail for dangerous stages.
 import argparse
 import contextlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -51,12 +52,13 @@ def _print_path(label: str, path: Path) -> None:
 
 
 def cmd_run(args) -> int:
+    repo = args.repo or os.getcwd()  # default to the current directory
     task_md = Path(args.task).read_text(encoding="utf-8")
     task_meta = json.loads(Path(args.meta).read_text(encoding="utf-8"))
     with _live_progress(not args.quiet):
         final = run_mod.run_pipeline(
             args.job,
-            args.repo,
+            repo,
             task_md=task_md,
             task_meta=task_meta,
             test_command=args.test_command,
@@ -313,12 +315,12 @@ def cmd_setup_proxy_status(args) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="PDD pipeline CLI.")
-    sub = p.add_subparsers(dest="cmd", required=True)
+    p = argparse.ArgumentParser(prog="pdd", description="PDD pipeline CLI.")
+    sub = p.add_subparsers(dest="cmd")  # not required: bare `pdd` prints help
 
     run_p = sub.add_parser("run", help="run one job end-to-end")
     run_p.add_argument("--job", required=True, help="correlation id (Jira key)")
-    run_p.add_argument("--repo", required=True, help="target git repo path")
+    run_p.add_argument("--repo", default=None, help="target git repo path (default: cwd)")
     run_p.add_argument("--task", required=True, help="path to task.md")
     run_p.add_argument("--meta", required=True, help="path to task_meta.json")
     run_p.add_argument("--test-command", default=None)
@@ -421,7 +423,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if not getattr(args, "func", None):  # bare `pdd` -> show help (menu later)
+        parser.print_help()
+        return 0
     return args.func(args)
 
 
