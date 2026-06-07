@@ -4,6 +4,7 @@ Turns the diff-on-disk into a real branch (and optionally a pushed branch / a PR
 via `gh`) on the TARGET repo. PDD does not impose a git identity — the commit
 uses the target repo's own user.name/email.
 """
+import re
 import shutil
 import subprocess
 
@@ -49,6 +50,14 @@ def _push(wt, branch: str) -> bool:
     return _git(["push", "-u", "origin", branch], wt).returncode == 0
 
 
+def _pr_create_url(remote_url: str, branch: str):
+    """Best-effort 'open a PR' link for a GitHub remote (https or ssh)."""
+    m = re.search(r"github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?$", remote_url or "")
+    if not m:
+        return None
+    return f"https://github.com/{m.group(1)}/pull/new/{branch}"
+
+
 def _create_pr(wt, branch: str, base: str, title: str, body: str):
     if shutil.which("gh") is None:
         return None
@@ -77,12 +86,20 @@ def publish(job: str, *, push: bool = False, make_pr: bool = False,
 
     title, body = _message(job, message)
     sha = _commit(job, wt, title, body)
-    result = {"branch": branch, "committed": sha, "pushed": False, "pr_url": None}
+    result = {
+        "branch": branch, "worktree": str(wt),
+        "committed": sha, "pushed": False, "pr_url": None,
+    }
     if sha is None:
-        result["note"] = "nothing to commit (no changes in the worktree)"
-    if push and sha:
+        result["note"] = "nothing new to commit (the branch may already hold the change)"
+    # Push is idempotent: it must work even when this call made no new commit
+    # (e.g. a prior `publish` already committed). A no-op push just returns 0.
+    if push:
         result["pushed"] = _push(wt, branch)
-    if make_pr and result["pushed"]:
-        result["pr_url"] = _create_pr(wt, branch, base, title, body)
+        if result["pushed"]:
+            remote = _git(["remote", "get-url", "origin"], wt).stdout.strip()
+            result["pr_create_url"] = _pr_create_url(remote, branch)
+            if make_pr:
+                result["pr_url"] = _create_pr(wt, branch, base, title, body)
     artifacts.write_json(job, "publish.json", result)
     return result

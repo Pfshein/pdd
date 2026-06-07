@@ -67,8 +67,10 @@ def cmd_run(args) -> int:
             keep_worktree=not args.drop_worktree,
         )
     print(f"\n=== {args.job} finished at: {final['node']} ===")
+    print(f"branch:    pdd/{args.job}  (lives in the job checkout, not your repo)")
     _print_path("worktree", worktree.worktree_path(args.job))
     _print_path("artifacts", state_mod.job_dir(args.job))
+    print(f"next:      pdd report {args.job}  |  pdd diff {args.job}  |  pdd publish {args.job} --push")
     return 0 if final["node"] == DONE else 2
 
 
@@ -151,7 +153,12 @@ def cmd_publish(args) -> int:
         print(f"publish failed: {exc}", file=sys.stderr)
         return 2
     print(json.dumps(res, indent=2, ensure_ascii=False))
-    return 0 if res.get("committed") else 1
+    if res.get("pr_create_url"):
+        print(f"\nOpen a PR: {res['pr_create_url']}", file=sys.stderr)
+    elif res.get("committed") and not res.get("pushed"):
+        print(f"\nCommitted to {res['branch']} (not pushed). Push: pdd publish {args.job} --push",
+              file=sys.stderr)
+    return 0 if (res.get("committed") or res.get("pushed")) else 1
 
 
 def cmd_report(args) -> int:
