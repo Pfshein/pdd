@@ -64,7 +64,7 @@ def _run_structured(role: str, sections: dict, schema_file: str, job: str, node:
         json_schema=f"@{config.SCHEMAS_DIR / schema_file}",
         output_format="json",
         wall_time_s=_wall(node),
-        max_tool_calls=6,
+        max_tool_calls=config.STAGE_EXPLORE_MAX_TOOL_CALLS,
         extra=["--exclude-tools", EXCLUDE_EXPLORE],
     )
     if _process_failed(res):
@@ -86,7 +86,7 @@ def _run_freeform(role: str, sections: dict, job: str, node: str):
         cwd=worktree.worktree_path(job),
         output_format="json",
         wall_time_s=_wall(node),
-        max_tool_calls=6,
+        max_tool_calls=config.STAGE_EXPLORE_MAX_TOOL_CALLS,
         extra=["--exclude-tools", EXCLUDE_EXPLORE],
     )
 

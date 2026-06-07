@@ -35,6 +35,8 @@ STAGE_WALL_TIME_S = 600
 STAGE_KILL_MARGIN_S = 60
 # Cumulative tool-call cap per stage (--max-tool-calls).
 STAGE_MAX_TOOL_CALLS = 40
+# Non-editing stages (architect, reviewer) don't roam the filesystem; cheaper.
+STAGE_EXPLORE_MAX_TOOL_CALLS = 6
 # wall-time budget exceeded means "slow", not "stuck": retry once, bigger budget.
 STAGE_WALL_RETRY_FACTOR = 2
 STAGE_WALL_MAX_S = 1200
