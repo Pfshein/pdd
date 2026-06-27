@@ -43,6 +43,12 @@ STAGE_WALL_MAX_S = 1200
 # Whole-job TTL; reaper kills anything still alive past this.
 JOB_TTL_S = 3600
 
+# --- Job queue (durable file queue under runs/queue) ----------------------
+# One JSON record per job under RUNS_DIR/queue/<job>.json. The dir is derived
+# from RUNS_DIR at call time (queue.queue_dir) so tests can monkeypatch RUNS_DIR.
+# A lease older than this (seconds) is considered stale and reclaimable.
+QUEUE_LEASE_TTL_S = int(os.environ.get("PDD_QUEUE_LEASE_TTL_S", str(JOB_TTL_S)))
+
 # --- Test command (deterministic TEST_RUN) --------------------------------
 # `python -m pytest` instead of bare `pytest`: robust when pytest.exe is not on PATH.
 TEST_COMMAND = os.environ.get("PIPELINE_TEST_COMMAND", "python -m pytest -q")
