@@ -32,5 +32,30 @@ Runtime hardening is applied by `orchestrator.sandbox.docker_run_argv()`:
 - process, memory, and CPU limits are set;
 - secret values are passed through env, never embedded in argv.
 
-The current network is a named Docker bridge (`pdd-egress` by default). The next
-hardening layer is a proxy sidecar with an egress allowlist for the model host.
+Egress is restricted, not open: agent containers join an **internal** Docker
+network (`pdd-internal` by default, no direct route to the internet) and reach
+the model host only through a squid sidecar proxy with a host allowlist
+(`pdd-proxy`). Project dependency installs use a separate setup proxy; `TEST_RUN`
+gets no network at all.
+
+## Invariants
+
+These are the security boundary — do not weaken them without a task explicitly
+about sandbox behavior (see [../AGENTS.md](../AGENTS.md)):
+
+- the container, not the worktree or the review stage, is the boundary;
+- only the job worktree is mounted; no host `$HOME`, creds, or other repos;
+- no host env is inherited except the `OPENAI_*` creds passed by name;
+- `--cap-drop ALL`, `--read-only` rootfs, `--security-opt no-new-privileges`,
+  non-root `--user`;
+- agents have **no direct egress** — only the allowlist proxy;
+- **`TEST_RUN` always runs with `--network none`**;
+- fail-closed: no Docker and no explicit `PDD_ALLOW_UNSANDBOXED=1` /
+  `PDD_REQUIRE_SANDBOX=0` → the stage refuses to start (`SandboxUnavailable`).
+
+Knobs (image, network, proxy, user, seccomp, limits) live in `orchestrator/config.py`
+(`PDD_SANDBOX_*`). Each job-bound run appends `sandbox_audit.jsonl` to the job
+artifacts.
+
+See [proxy/README.md](proxy/README.md) for the egress proxy and
+[../orchestrator/README.md](../orchestrator/README.md) for how stages route here.
