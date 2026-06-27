@@ -1,82 +1,84 @@
 # PDD — Please Drop Database
 
-Автоматизированный дев-пайплайн поверх форка **qwen code**: по ссылке на Jira-таску сам ведёт
-разработку до готового результата через многостадийный прогон
-**архитектор → кодер → ревьюер → тестировщик → ревьюер** с возвратами на предыдущие стадии.
+Self-hosted **Loop Engineering**-рантайм поверх форка **qwen code**: по задаче
+(`task.md` + `task_meta.json`, в т.ч. из Jira/GitHub issue) сам ведёт разработку до
+готового результата через многостадийный прогон
+**INTAKE → TRIAGE → ARCHITECT → CODER → CODE_REVIEW → TESTER → TEST_RUN → FINAL_REVIEW**
+с возвратами на предыдущие стадии.
 
-Оркестрация — **детерминированный код**, не LLM-оркестратор: граф состояний и маршруты
-известны заранее (наблюдаемо, тестируемо, восстанавливаемо). Состояние между стадиями — только
-через артефакты на диске; агенты — headless one-shot вызовы qwen (живых сессий нет → нет зомби).
+Главное: **цикл проектирует код, а не LLM**. Граф состояний и маршруты известны заранее
+(наблюдаемо, тестируемо, восстанавливаемо); LLM исполняет роль внутри стадии, а `router`
+решает, куда идти дальше, сколько бюджета осталось и когда остановиться. Состояние между
+стадиями — только через артефакты на диске; агенты — headless one-shot вызовы qwen
+(живых сессий нет → нет зомби). Опасные стадии исполняются в Docker-песочнице, fail-closed.
 
 > Имя — ирония: пайплайн запускает unattended-агентов с авто-аппрувом, поэтому вся защита от
 > «please drop database» вынесена в песочницу, worktree-изоляцию и стадию ревью, а не в человека
 > у терминала.
 
+Архитектура и карта модулей — в [orchestrator/README.md](orchestrator/README.md).
+Дорожная карта развития в Loop Engineering-рантайм — в
+[docs/LOOP_ENGINEERING_PROJECT.md](docs/LOOP_ENGINEERING_PROJECT.md).
+
 ## Раскладка
 
-```
-orchestrator/      # control plane (простые функции + данные, без ООП)
-  graph.py         # узлы, таблица переходов, класс→стадия — данные
-  router.py        # decide_next() — чистая функция: маршруты, бюджеты, эскалация
-  triage.py        # детерминированный триаж: нужен ли первичный архитектор
-  state.py         # state.json + transitions/attempts.jsonl
-  driver.py        # главный цикл: run node → route → persist
-  runner.py        # спавн qwen-стадии: argv, stdin-промпт, двойной таймаут
-  killtree.py      # kill всего дерева процессов (win+posix)
-  verdict.py       # парсинг/валидация структурного вывода qwen → вердикт
-  config.py        # бюджеты, таймауты, креды модели
-  schemas/         # JSON-схемы для --json-schema (verdict, task_meta)
-stubs/             # фейковый qwen для тестов графа и kill-tree
-tools/probe_review.py  # эмпирический прогон одной реальной стадии
-tests/             # pytest: граф, kill-tree, парсер вердикта
-docs/endpoint.md   # подтверждённый контракт вызова qwen
-.qwen/.env         # креды модели (в .gitignore — НЕ коммитится)
+```text
+orchestrator/   # control plane: граф, router, стадии, sandbox-маршрутизация, CLI
+  prompts/      # промпты ролей (контракт стадии)
+  schemas/      # JSON-схемы для --json-schema (verdict, plan, task_meta)
+sandbox/        # Docker-образ + egress-proxy (граница исполнения опасных стадий)
+tools/          # probe-скрипты (живой эндпоинт) + offline demo-скрипты
+stubs/          # детерминированный фейковый qwen для тестов
+tests/          # pytest: граф, router, sandbox-argv, очередь, отчёт, ...
+docs/           # STATUS (snapshot), endpoint-контракт, gate, backlog
+.qwen/.env      # креды модели (в .gitignore — НЕ коммитится)
 ```
 
-## Статус
+У каждой директории есть свой `README.md` с контрактом и инвариантами.
 
-- [x] Фаза 0-1 — детерминированное ядро машины состояний + юнит-тесты
-- [x] Фаза 2 — рантайм процессов + kill_tree (защита от зависаний)
-- [x] Фаза 3 — артефакты + сборка промптов стадий
-- [x] Фаза 4 — git worktree на джоб + дифф
-- [x] Фаза 5 — реальный контракт qwen-стадии подтверждён живым прогоном
-- [x] Фаза 6 — полный end-to-end на фикстуре доходит до DONE на живой модели
-- [ ] Jira-замыкание — INTAKE через Jira MCP + коммент при `needs-human`
-      (готов промпт `prompts/intake.md`; нужен подключённый Jira MCP-сервер)
+## Установка
 
-Прогон демо: `PYTHONPATH=. python tools/demo_e2e.py` — чинит баг в одноразовом
-репозитории через весь конвейер (INTAKE → TRIAGE → CODER → CODE_REVIEW → TESTER →
-TEST_RUN → FINAL_REVIEW → DONE).
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -U pip
+python -m pip install -e .        # ставит консольную команду `pdd`
+pdd doctor                        # self-check окружения (python/git/qwen/docker/sandbox)
+```
+
+Требуется Python >= 3.12. Креды модели — в `.qwen/.env` (OpenAI-совместимый эндпоинт);
+контракт вызова qwen — в [`docs/endpoint.md`](docs/endpoint.md).
 
 ## Запуск
 
-```bash
-python -m pytest -q                         # тесты ядра, kill-tree, парсера
+```powershell
+pytest -q          # тесты ядра (без сети/Docker/модели)
+pdd                # без аргументов — интерактивное arrow-key меню
 ```
 
-Реальный пользовательский поток:
+Пользовательский поток (всё доступно и как `python -m orchestrator.cli <cmd>`):
 
-```bash
-python -m orchestrator.cli intake-jira --issue issue.json --out .pdd-intake/DEMO-1
-python -m orchestrator.cli run --job DEMO-1 --repo <repo> --task task.md --meta task_meta.json
-python -m orchestrator.cli status DEMO-1
-python -m orchestrator.cli show DEMO-1
-python -m orchestrator.cli diff DEMO-1
-python -m orchestrator.cli reap                 # dry-run stale job cleanup
-python -m orchestrator.cli cleanup DEMO-1
+```powershell
+pdd intake-jira --issue issue.json --out .pdd-intake/DEMO-1
+pdd run --job DEMO-1 --repo <repo> --task task.md --meta task_meta.json
+pdd status DEMO-1
+pdd show DEMO-1
+pdd diff DEMO-1
+pdd report DEMO-1
+pdd reap            # dry-run чистки зависших джоб
+pdd cleanup DEMO-1
 ```
 
 `intake-jira` работает с issue JSON, полученным любым способом (Jira export/MCP/REST), и пишет
 `task.md` + `task_meta.json`. Боевой Jira MCP позже должен только заменить источник JSON, а не
 формат артефактов.
 
-Для репозиториев, где перед тестами нужно поставить зависимости, используйте отдельную
-setup-фазу:
+Для репозиториев, где перед тестами нужно поставить зависимости, — отдельная setup-фаза:
 
-```bash
-python -m orchestrator.cli setup-proxy-up
-python -m orchestrator.cli run --job DEMO-1 --repo <repo> --task task.md --meta task_meta.json \
-  --setup-command "pip install -r requirements.txt" \
+```powershell
+pdd setup-proxy-up
+pdd run --job DEMO-1 --repo <repo> --task task.md --meta task_meta.json `
+  --setup-command "pip install -r requirements.txt" `
   --test-command "python -m pytest -q"
 ```
 
@@ -86,52 +88,50 @@ python -m orchestrator.cli run --job DEMO-1 --repo <repo> --task task.md --meta 
 `run` оставляет за собой:
 
 ```text
-runs/<JOB>/              # state, transitions, attempts, plan, diff, verdict, tests
+runs/<JOB>/                 # state, transitions, attempts, plan, diff, verdict, tests, events
 %TEMP%/pdd-worktrees/<JOB>  # рабочий git worktree задачи
 ```
 
 `events.jsonl` внутри `runs/<JOB>/` — единый структурный timeline job: старт/конец run,
 старт/конец стадий, transition, duration и короткий summary результата.
 
-Docker — внутренняя граница исполнения для опасных стадий (`CODER`, `TESTER`, `TEST_RUN`),
-а не место, куда пользователь должен заходить руками. Оркестратор, маршрутизация,
-артефакты и CLI остаются на хосте.
+## Песочница
 
-Эмпирический прогон одной реальной стадии:
+Docker — внутренняя **граница исполнения** опасных стадий (`CODER`, `TESTER`, `TEST_RUN`),
+а не место, куда пользователь заходит руками. Оркестратор, маршрутизация, артефакты и CLI
+остаются на хосте. Подробности и инварианты — в [sandbox/README.md](sandbox/README.md).
 
-```bash
-PYTHONPATH=. python tools/probe_review.py   # одна реальная стадия ревью на модели
-PYTHONPATH=. python tools/demo_issue_to_pr.py # offline issue JSON -> run -> report -> publish smoke
-```
-
-Подготовка Docker sandbox:
-
-```bash
-python -m orchestrator.cli sandbox-build
-python -m orchestrator.cli sandbox-network
-python -m orchestrator.cli sandbox-smoke <worktree-or-temp-dir>
-python -m orchestrator.cli proxy-up
-python -m orchestrator.cli setup-proxy-up
+```powershell
+pdd sandbox-build
+pdd sandbox-network
+pdd sandbox-smoke <worktree-or-temp-dir>
+pdd proxy-up
+pdd setup-proxy-up
 ```
 
 Опциональный seccomp-профиль для agent/test containers:
 
-```bash
-PDD_SECCOMP_PROFILE=sandbox/seccomp.json python -m orchestrator.cli run --job DEMO-1 --repo <repo> --task task.md --meta task_meta.json
+```powershell
+$env:PDD_SECCOMP_PROFILE="sandbox/seccomp.json"; pdd run --job DEMO-1 --repo <repo> --task task.md --meta task_meta.json
 ```
 
 Каждый sandbox-запуск с привязкой к job пишет `sandbox_audit.jsonl` в артефакты job и попадает
-в `report`.
+в `report`. Для доверенного локального дебага без Docker есть громкий opt-out
+`PDD_ALLOW_UNSANDBOXED=1` (пишет `SECURITY.txt`).
 
-На Windows лучше закрепить проектный интерпретатор через venv, чтобы не зависеть от
-WindowsApps/PATH alias:
+## Демо и probe-скрипты
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -U pip pytest jsonschema
-python -m pytest -q
+$env:PYTHONPATH="."; python tools/demo_e2e.py          # фикс бага в одноразовом репо через весь конвейер
+$env:PYTHONPATH="."; python tools/demo_issue_to_pr.py  # offline issue JSON -> run -> report -> publish smoke
+$env:PYTHONPATH="."; python tools/probe_review.py      # одна реальная стадия ревью на живой модели
 ```
 
-Креды модели — в `.qwen/.env` (OpenAI-совместимый эндпоинт). Подробности контракта вызова
-qwen — в [`docs/endpoint.md`](docs/endpoint.md), архитектура — в плане проекта.
+## Статус
+
+Детерминированное ядро, sandbox-граница, артефакты, worktree-изоляция, publish/PR и offline
+issue→report→publish smoke — реализованы и покрыты тестами (`pytest -q`). Развитие из
+single-job команды в полноценный loop-рантайм (очередь + воркеры, машиночитаемые stop-reasons,
+cost-телеметрия, демо, parallel candidates) ведётся по карточкам
+[docs/LOOP_ENGINEERING_PROJECT.md](docs/LOOP_ENGINEERING_PROJECT.md). Срез по сделанному —
+[docs/STATUS.md](docs/STATUS.md) (snapshot, см. git за актуальным).
