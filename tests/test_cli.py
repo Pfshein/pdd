@@ -43,6 +43,74 @@ def test_diff_prints_saved_diff(tmp_path, monkeypatch, capsys):
     assert "+return a + b" in capsys.readouterr().out
 
 
+def _seed_task_files(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    task = tmp_path / "task.md"
+    task.write_text("fix it", encoding="utf-8")
+    meta = tmp_path / "task_meta.json"
+    meta.write_text("{}", encoding="utf-8")
+    return repo, task, meta
+
+
+def test_enqueue_writes_record_and_prints_job_id(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    repo, task, meta = _seed_task_files(tmp_path)
+
+    rc = cli.main(["enqueue", "--job", "DEMO-1", "--repo", str(repo),
+                   "--task", str(task), "--meta", str(meta)])
+
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == "DEMO-1"
+    from orchestrator import queue as queue_mod
+    rec = queue_mod.get("DEMO-1")
+    assert rec["status"] == "queued"
+    assert rec["repo"] == str(repo.resolve())
+
+
+def test_enqueue_rejects_missing_task_file(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    repo, _task, meta = _seed_task_files(tmp_path)
+
+    rc = cli.main(["enqueue", "--job", "DEMO-1", "--repo", str(repo),
+                   "--task", str(tmp_path / "missing.md"), "--meta", str(meta)])
+
+    assert rc == 2
+    assert "task not found" in capsys.readouterr().err
+
+
+def test_queue_lists_queued_job(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    repo, task, meta = _seed_task_files(tmp_path)
+    cli.main(["enqueue", "--job", "DEMO-1", "--repo", str(repo),
+              "--task", str(task), "--meta", str(meta)])
+    capsys.readouterr()  # drop enqueue output
+
+    assert cli.main(["queue"]) == 0
+    out = capsys.readouterr().out
+    assert "JOB" in out and "STATUS" in out
+    assert "DEMO-1" in out and "queued" in out
+
+
+def test_queue_json_is_machine_readable(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    repo, task, meta = _seed_task_files(tmp_path)
+    cli.main(["enqueue", "--job", "DEMO-1", "--repo", str(repo),
+              "--task", str(task), "--meta", str(meta)])
+    capsys.readouterr()
+
+    assert cli.main(["queue", "--json"]) == 0
+    records = json.loads(capsys.readouterr().out)
+    assert [r["job"] for r in records] == ["DEMO-1"]
+
+
+def test_queue_empty(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+
+    assert cli.main(["queue"]) == 0
+    assert "empty" in capsys.readouterr().out
+
+
 def test_sandbox_build_cli_invokes_docker_build(monkeypatch):
     calls = []
     monkeypatch.setattr(cli, "_run_command", lambda argv: calls.append(argv) or 0)

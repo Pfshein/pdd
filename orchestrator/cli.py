@@ -243,6 +243,66 @@ def cmd_jira_comment_draft(args) -> int:
     return 0
 
 
+def cmd_enqueue(args) -> int:
+    from . import queue as queue_mod
+
+    # Store absolute paths: a worker may run from a different cwd later.
+    repo = Path(args.repo or os.getcwd()).resolve()
+    task = Path(args.task).resolve()
+    meta = Path(args.meta).resolve()
+    for label, path in (("repo", repo), ("task", task), ("meta", meta)):
+        if not path.exists():
+            print(f"enqueue: {label} not found: {path}", file=sys.stderr)
+            return 2
+    try:
+        rec = queue_mod.enqueue(
+            args.job,
+            repo=str(repo),
+            task=str(task),
+            meta=str(meta),
+            base_ref=args.base_ref,
+            test_command=args.test_command,
+            setup_command=args.setup_command,
+        )
+    except ValueError as exc:
+        print(f"enqueue: {exc}", file=sys.stderr)
+        return 2
+    print(rec["job"])
+    return 0
+
+
+def _fmt_ts(ts) -> str:
+    import time
+
+    try:
+        return time.strftime("%Y-%m-%d %H:%M", time.localtime(float(ts)))
+    except (TypeError, ValueError):
+        return "-"
+
+
+def cmd_queue(args) -> int:
+    from . import queue as queue_mod
+
+    records = queue_mod.list_jobs()
+    if args.json:
+        print(json.dumps(records, indent=2, ensure_ascii=False))
+        return 0
+    if not records:
+        print("queue is empty")
+        return 0
+    headers = ("JOB", "STATUS", "CREATED", "REPO")
+    rows = [
+        (r.get("job", ""), r.get("status", ""), _fmt_ts(r.get("created_ts")), r.get("repo", ""))
+        for r in records
+    ]
+    widths = [max(len(headers[i]), *(len(row[i]) for row in rows)) for i in range(len(headers))]
+    line = "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers))
+    print(line.rstrip())
+    for row in rows:
+        print("  ".join(row[i].ljust(widths[i]) for i in range(len(row))).rstrip())
+    return 0
+
+
 def _run_command(argv: list[str]) -> int:
     from subprocess import run
 
@@ -336,6 +396,20 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--drop-worktree", action="store_true")
     run_p.add_argument("--quiet", action="store_true", help="suppress live stage progress")
     run_p.set_defaults(func=cmd_run)
+
+    enqueue_p = sub.add_parser("enqueue", help="add a job to the durable queue (does not run it)")
+    enqueue_p.add_argument("--job", required=True, help="correlation id (Jira key)")
+    enqueue_p.add_argument("--repo", default=None, help="target git repo path (default: cwd)")
+    enqueue_p.add_argument("--task", required=True, help="path to task.md")
+    enqueue_p.add_argument("--meta", required=True, help="path to task_meta.json")
+    enqueue_p.add_argument("--base-ref", default="HEAD")
+    enqueue_p.add_argument("--test-command", default=None)
+    enqueue_p.add_argument("--setup-command", default=None, help="dependency install command before TEST_RUN")
+    enqueue_p.set_defaults(func=cmd_enqueue)
+
+    queue_p = sub.add_parser("queue", help="list queued jobs")
+    queue_p.add_argument("--json", action="store_true", help="machine-readable records")
+    queue_p.set_defaults(func=cmd_queue)
 
     status_p = sub.add_parser("status", help="print job status")
     status_p.add_argument("job")
