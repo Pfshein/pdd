@@ -10,7 +10,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import artifacts, config, events, progress, run as run_mod, sandbox, state as state_mod, worktree
+from . import artifacts, config, events, issues, progress, run as run_mod, sandbox, state as state_mod, worktree
 from .graph import DONE
 
 
@@ -226,6 +226,17 @@ def cmd_intake_jira(args) -> int:
 
     issue = json.loads(Path(args.issue).read_text(encoding="utf-8"))
     res = jira.write_intake(issue, args.out)
+    print(json.dumps(res, indent=2, ensure_ascii=False))
+    return 0
+
+
+def cmd_intake_issue(args) -> int:
+    issue = json.loads(Path(args.issue).read_text(encoding="utf-8"))
+    try:
+        res = issues.write_intake(args.provider, issue, args.out)
+    except ValueError as exc:
+        print(f"intake-issue: {exc}", file=sys.stderr)
+        return 2
     print(json.dumps(res, indent=2, ensure_ascii=False))
     return 0
 
@@ -486,6 +497,12 @@ def build_parser() -> argparse.ArgumentParser:
     intake_jira_p.add_argument("--issue", required=True, help="path to Jira issue JSON")
     intake_jira_p.add_argument("--out", required=True, help="directory for task.md/task_meta.json")
     intake_jira_p.set_defaults(func=cmd_intake_jira)
+
+    intake_issue_p = sub.add_parser("intake-issue", help="normalize a provider issue JSON into task files")
+    intake_issue_p.add_argument("--provider", required=True, choices=sorted(issues.SUPPORTED_PROVIDERS))
+    intake_issue_p.add_argument("--issue", required=True, help="path to issue JSON")
+    intake_issue_p.add_argument("--out", required=True, help="directory for task.md/task_meta.json")
+    intake_issue_p.set_defaults(func=cmd_intake_issue)
 
     jira_comment_p = sub.add_parser("jira-comment-draft", help="draft a Jira comment for NEEDS_HUMAN")
     jira_comment_p.add_argument("job")

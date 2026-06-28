@@ -77,6 +77,12 @@ pdd cleanup DEMO-1
 `task.md` + `task_meta.json`. Боевой Jira MCP позже должен только заменить источник JSON, а не
 формат артефактов.
 
+GitHub issue JSON принимается тем же offline-путём (без обращения к GitHub API):
+
+```powershell
+pdd intake-issue --provider github --issue gh-issue.json --out .pdd-intake/GH-42
+```
+
 ### Очередь (queue)
 
 Джоб можно поставить в durable-очередь, не запуская сразу, и затем обработать воркером:
