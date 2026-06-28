@@ -94,6 +94,7 @@ pdd queue --json     # машиночитаемые записи
 
 pdd worker --once               # взять один джоб из очереди, прогнать, выйти
 pdd worker --poll-interval 5    # крутиться, опрашивая очередь раз в N секунд
+pdd worker --once --publish --push   # + опубликовать ветку для джоб, дошедших до DONE
 ```
 
 Записи лежат по одной на джоб в `runs/queue/<job>.json`. `enqueue` валидирует пути и печатает

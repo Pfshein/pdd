@@ -37,10 +37,28 @@ def _run_record(rec: dict) -> dict:
     )
 
 
-def process_one(worker: str | None = None) -> dict | None:
+def _publish(job: str, push: bool = False) -> dict:
+    """Publish a DONE job. A publish failure is reported, never undoes DONE."""
+    from . import publish as publish_mod
+
+    try:
+        res = publish_mod.publish(job, push=push)
+        events.record(job, "worker_published", branch=res.get("branch"),
+                      committed=bool(res.get("committed")), pushed=res.get("pushed"))
+        return {"ok": True, "committed": bool(res.get("committed")), "pushed": res.get("pushed")}
+    except Exception as exc:
+        summary = f"{type(exc).__name__}: {exc}"
+        events.record(job, "worker_publish_failed", error=summary)
+        return {"ok": False, "error": summary}
+
+
+def process_one(worker: str | None = None, publish: bool = False,
+                push: bool = False) -> dict | None:
     """Acquire and process a single queued job.
 
     Return a result dict ({job, status, node?}), or None if the queue is idle.
+    With publish=True, a DONE job is published; a publish failure is recorded on
+    the queue record (and events) but does not change the DONE queue status.
     """
     rec = queue.acquire(worker=worker)
     if rec is None:
@@ -59,18 +77,28 @@ def process_one(worker: str | None = None) -> dict | None:
     status = NODE_TO_STATUS.get(final["node"], queue.FAILED)
     queue.release(job, status)
     events.record(job, "worker_finished", node=final["node"], status=status)
-    return {"job": job, "status": status, "node": final["node"]}
+    result = {"job": job, "status": status, "node": final["node"]}
+
+    if publish and final["node"] == DONE:
+        pub = _publish(job, push=push)
+        queue.annotate(job, publish=pub)  # visible in the queue; status stays done
+        result["publish"] = pub
+    return result
 
 
 def run_worker(once: bool = False, poll_interval: float = DEFAULT_POLL_INTERVAL,
-               worker: str | None = None) -> int:
+               worker: str | None = None, publish: bool = False, push: bool = False) -> int:
     """Process queued jobs. `--once` does at most one; otherwise poll until interrupted."""
     def _tick() -> dict | None:
-        result = process_one(worker=worker)
+        result = process_one(worker=worker, publish=publish, push=push)
         if result is None:
             print("worker: no queued work")
         else:
-            print(f"worker: {result['job']} -> {result['status']}")
+            line = f"worker: {result['job']} -> {result['status']}"
+            pub = result.get("publish")
+            if pub is not None:
+                line += " (published)" if pub.get("ok") else " (publish failed)"
+            print(line)
         return result
 
     if once:
