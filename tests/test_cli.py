@@ -219,3 +219,21 @@ def test_run_passes_loop_profile_through(tmp_path, monkeypatch):
 
     assert rc == 0
     assert seen["loop_profile"] == "conservative"
+
+
+def test_intake_issue_github_writes_task_files(tmp_path, capsys):
+    issue = tmp_path / "gh.json"
+    issue.write_text('{"number": 9, "title": "Bug", "body": "x", "labels": ["bug"]}', encoding="utf-8")
+    out = tmp_path / "GH-9"
+
+    rc = cli.main(["intake-issue", "--provider", "github", "--issue", str(issue), "--out", str(out)])
+
+    assert rc == 0
+    assert (out / "task.md").exists() and (out / "task_meta.json").exists()
+
+
+def test_intake_issue_rejects_unknown_provider(tmp_path):
+    import pytest
+    issue = tmp_path / "x.json"; issue.write_text("{}", encoding="utf-8")
+    with pytest.raises(SystemExit):  # argparse choices
+        cli.main(["intake-issue", "--provider", "gitlab", "--issue", str(issue), "--out", str(tmp_path / "o")])
