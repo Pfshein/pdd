@@ -303,6 +303,14 @@ def cmd_queue(args) -> int:
     return 0
 
 
+def cmd_worker(args) -> int:
+    from . import worker as worker_mod
+
+    return worker_mod.run_worker(
+        once=args.once, poll_interval=args.poll_interval, worker=args.name
+    )
+
+
 def _run_command(argv: list[str]) -> int:
     from subprocess import run
 
@@ -410,6 +418,13 @@ def build_parser() -> argparse.ArgumentParser:
     queue_p = sub.add_parser("queue", help="list queued jobs")
     queue_p.add_argument("--json", action="store_true", help="machine-readable records")
     queue_p.set_defaults(func=cmd_queue)
+
+    worker_p = sub.add_parser("worker", help="process queued jobs one at a time")
+    worker_p.add_argument("--once", action="store_true", help="process at most one job and exit")
+    worker_p.add_argument("--poll-interval", type=float, default=5.0,
+                          help="seconds between polls when idle (ignored with --once)")
+    worker_p.add_argument("--name", default=None, help="worker id recorded in the lease")
+    worker_p.set_defaults(func=cmd_worker)
 
     status_p = sub.add_parser("status", help="print job status")
     status_p.add_argument("job")
