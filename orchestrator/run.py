@@ -6,7 +6,9 @@ CLI:
 """
 import argparse
 import json
+import re
 import sys
+from pathlib import Path
 
 from . import artifacts, config, driver, events, graph, sandbox, stages, state as state_mod, worktree
 from .graph import NEEDS_HUMAN, DONE
@@ -112,9 +114,61 @@ def _reset_job_logs(job: str) -> None:
             p.unlink()
 
 
+_PDD_CARD_RE = re.compile(r"\b(PDD-\d+)\b")
+
+
+def _extract_markdown_section(text: str, heading_prefix: str) -> str:
+    """Return a markdown section whose heading starts with `heading_prefix`."""
+    lines = text.splitlines()
+    start = None
+    level = None
+    for idx, line in enumerate(lines):
+        match = re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
+        if match and match.group(2).startswith(heading_prefix):
+            start = idx
+            level = len(match.group(1))
+            break
+    if start is None:
+        return ""
+
+    end = len(lines)
+    for idx in range(start + 1, len(lines)):
+        match = re.match(r"^(#{1,6})\s+", lines[idx])
+        if match and len(match.group(1)) <= level:
+            end = idx
+            break
+    return "\n".join(lines[start:end]).strip()
+
+
+def hydrate_task_context(repo: str, task_md: str) -> str:
+    """Inline referenced backlog card specs so tool-less stages can see them."""
+    if "docs/LOOP_ENGINEERING_PROJECT.md" not in task_md:
+        return task_md
+    card_match = _PDD_CARD_RE.search(task_md)
+    if not card_match:
+        return task_md
+
+    doc_path = Path(repo) / "docs" / "LOOP_ENGINEERING_PROJECT.md"
+    if not doc_path.exists():
+        return task_md
+    section = _extract_markdown_section(doc_path.read_text(encoding="utf-8"), card_match.group(1))
+    if not section:
+        return task_md
+    if section in task_md:
+        return task_md
+    return (
+        task_md.rstrip()
+        + "\n\n## Resolved referenced specification\n"
+        + "Source: docs/LOOP_ENGINEERING_PROJECT.md\n\n"
+        + section
+        + "\n"
+    )
+
+
 def run_pipeline(job, repo, *, task_md, task_meta, test_command=None, setup_command=None,
                  base_ref="HEAD", keep_worktree=True, loop_profile=config.DEFAULT_LOOP_PROFILE) -> dict:
     _reset_job_logs(job)
+    task_md = hydrate_task_context(str(repo), task_md)
     profile = config.loop_profile(loop_profile)  # validates before touching git
     wt, branch, base_sha = worktree.create(repo, job, base_ref)
     events.record(
