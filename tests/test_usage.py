@@ -75,3 +75,37 @@ def test_totals_sums_rows_and_flags_estimate(tmp_path, monkeypatch):
     assert t["rows"] == 2
     assert t["input_tokens"] == 30  # 10 + 20
     assert t["estimated"] is True
+
+
+# --- Cost estimation (PDD-33) ---------------------------------------------
+def test_estimate_cost_none_when_no_rates():
+    assert usage.estimate_cost(1000, 1000, None, None) is None
+
+
+def test_estimate_cost_computes_from_rates():
+    # 2M input @ $1/1M + 1M output @ $3/1M = $2 + $3 = $5
+    assert usage.estimate_cost(2_000_000, 1_000_000, 1.0, 3.0) == 5.0
+
+
+def test_estimate_cost_handles_one_rate_only():
+    assert usage.estimate_cost(1_000_000, 1_000_000, 2.0, None) == 2.0
+
+
+def test_cost_summary_uses_config_rates(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(config, "MODEL_INPUT_PRICE_PER_1M", 1.0)
+    monkeypatch.setattr(config, "MODEL_OUTPUT_PRICE_PER_1M", 3.0)
+    usage.record("JOB-C", "CODER", prompt="x" * 4_000_000, result=_events("y" * 4_000_000))
+
+    s = usage.cost_summary("JOB-C")
+
+    assert s["cost_usd"] is not None and s["cost_usd"] > 0
+
+
+def test_cost_summary_none_cost_without_rates(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(config, "MODEL_INPUT_PRICE_PER_1M", None)
+    monkeypatch.setattr(config, "MODEL_OUTPUT_PRICE_PER_1M", None)
+    usage.record("JOB-N", "CODER", prompt="x" * 40, result=_events("y"))
+
+    assert usage.cost_summary("JOB-N")["cost_usd"] is None

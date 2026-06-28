@@ -67,6 +67,22 @@ JOB_TTL_S = 3600
 # A lease older than this (seconds) is considered stale and reclaimable.
 QUEUE_LEASE_TTL_S = int(os.environ.get("PDD_QUEUE_LEASE_TTL_S", str(JOB_TTL_S)))
 
+# --- Cost estimation (optional) -------------------------------------------
+# Per-1M-token USD rates for the model. Unset -> None (no cost shown; never a
+# bogus $0.00). Used with the usage estimate (orchestrator/usage.py).
+def _price_env(name: str):
+    raw = os.environ.get(name)
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
+MODEL_INPUT_PRICE_PER_1M = _price_env("PDD_MODEL_INPUT_PRICE_PER_1M")
+MODEL_OUTPUT_PRICE_PER_1M = _price_env("PDD_MODEL_OUTPUT_PRICE_PER_1M")
+
 # --- Test command (deterministic TEST_RUN) --------------------------------
 # `python -m pytest` instead of bare `pytest`: robust when pytest.exe is not on PATH.
 TEST_COMMAND = os.environ.get("PIPELINE_TEST_COMMAND", "python -m pytest -q")
