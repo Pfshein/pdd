@@ -5,9 +5,23 @@ run_node is injected so the same loop drives stubs (tests) and real qwen.
 """
 import time
 
-from . import events, state as state_mod
-from .graph import is_terminal, RETURN_TARGETS
+from . import config, events, state as state_mod, usage
+from .graph import is_terminal, NEEDS_HUMAN, RETURN_TARGETS, REASON_COST_BUDGET
 from .router import decide_next
+
+
+def _cost_over_budget(job: str):
+    """Return (spent, cap) if the job exceeded its cost cap, else None.
+
+    Disabled by default (cap is None). Needs configured rates to have a cost.
+    """
+    cap = config.MAX_JOB_COST_USD
+    if cap is None:
+        return None
+    spent = usage.cost_summary(job).get("cost_usd")
+    if spent is not None and spent > cap:
+        return spent, cap
+    return None
 
 
 def _event_summary(result: dict) -> dict:
@@ -46,6 +60,17 @@ def run_job(job_state: dict, run_node, persist: bool = True) -> dict:
         result = run_node(node, job_state)
         duration_ms = int((time.perf_counter() - started) * 1000)
         nxt, reason, job_state = decide_next(node, result, job_state)
+
+        # Cost guardrail: after the stage's usage is recorded, stop before
+        # spending more if the job is over its (optional) cost cap.
+        if not is_terminal(nxt):
+            over = _cost_over_budget(job)
+            if over is not None:
+                spent, cap = over
+                nxt = NEEDS_HUMAN
+                reason = f"cost budget exhausted (${spent:.4f} > ${cap})"
+                job_state["node"] = NEEDS_HUMAN
+                job_state["terminal_reason"] = REASON_COST_BUDGET
 
         if persist:
             summary = _event_summary(result)

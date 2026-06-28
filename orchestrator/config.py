@@ -83,6 +83,10 @@ def _price_env(name: str):
 MODEL_INPUT_PRICE_PER_1M = _price_env("PDD_MODEL_INPUT_PRICE_PER_1M")
 MODEL_OUTPUT_PRICE_PER_1M = _price_env("PDD_MODEL_OUTPUT_PRICE_PER_1M")
 
+# Optional hard cap: stop a job (NEEDS_HUMAN) once estimated cost exceeds this.
+# None -> disabled (default). Needs the rates above to compute a cost.
+MAX_JOB_COST_USD = _price_env("PDD_MAX_JOB_COST_USD")
+
 # --- Test command (deterministic TEST_RUN) --------------------------------
 # `python -m pytest` instead of bare `pytest`: robust when pytest.exe is not on PATH.
 TEST_COMMAND = os.environ.get("PIPELINE_TEST_COMMAND", "python -m pytest -q")

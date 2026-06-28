@@ -121,6 +121,20 @@ runs/<JOB>/                 # state, transitions, attempts, plan, diff, verdict,
 `events.jsonl` внутри `runs/<JOB>/` — единый структурный timeline job: старт/конец run,
 старт/конец стадий, transition, duration и короткий summary результата.
 
+## Стоимость и стоп по бюджету
+
+Токены считаются per-stage в `usage.jsonl` (оценка из промпта+ответа, помечается `estimate`).
+Если задать ставки, в `report` появляется оценочная стоимость; если задать ещё и потолок —
+джоб остановится в `NEEDS_HUMAN` (`terminal_reason=cost_budget_exhausted`) до перерасхода:
+
+```powershell
+$env:PDD_MODEL_INPUT_PRICE_PER_1M="0.5"   # $/1M входных токенов
+$env:PDD_MODEL_OUTPUT_PRICE_PER_1M="1.5"  # $/1M выходных
+$env:PDD_MAX_JOB_COST_USD="0.25"          # стоп-кран на джоб (по умолчанию выключен)
+```
+
+Без ставок стоимость не показывается (никакого фейкового `$0.00`); cost-стоп выключен по умолчанию.
+
 ## Песочница
 
 Docker — внутренняя **граница исполнения** опасных стадий (`CODER`, `TESTER`, `TEST_RUN`),
