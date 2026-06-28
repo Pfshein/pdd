@@ -96,3 +96,7 @@ def test_pipeline_reaches_done(tmp_path, monkeypatch):
     assert job_meta["loop_profile"] == "standard"  # default profile recorded
     assert (jd / "diff.patch").read_text(encoding="utf-8").find("a + b") != -1
     assert json.loads((jd / "test_result.json").read_text(encoding="utf-8"))["status"] == "green"
+    # usage recorded per stage (estimate source, since the stub carries no usage)
+    from orchestrator import usage
+    rows = usage.read("JOB-X")
+    assert rows and all(r["source"] == "estimate" for r in rows)

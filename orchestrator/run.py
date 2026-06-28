@@ -27,6 +27,7 @@ PER_RUN_ARTIFACTS = (
     "reaped.json",
     "sandbox_audit.jsonl",
     "events.jsonl",
+    "usage.jsonl",
 )
 
 
