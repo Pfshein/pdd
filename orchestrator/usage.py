@@ -14,7 +14,7 @@ Accounting must never break a run: record() swallows every error.
 import json
 import time
 
-from . import state as state_mod
+from . import config, state as state_mod
 
 USAGE_FILE = "usage.jsonl"
 
@@ -113,3 +113,26 @@ def totals(job: str) -> dict:
     estimated = any(r.get("source") == "estimate" for r in rows)
     return {"input_tokens": inp, "output_tokens": out, "total_tokens": inp + out,
             "estimated": estimated, "rows": len(rows)}
+
+
+def estimate_cost(input_tokens: int, output_tokens: int,
+                  input_rate=None, output_rate=None):
+    """USD cost from token counts and per-1M rates. None if no rate is configured.
+
+    Returning None (not 0.0) when rates are absent keeps the report from showing a
+    bogus $0.00.
+    """
+    if input_rate is None and output_rate is None:
+        return None
+    return (input_tokens / 1_000_000) * (input_rate or 0.0) \
+        + (output_tokens / 1_000_000) * (output_rate or 0.0)
+
+
+def cost_summary(job: str) -> dict:
+    """Token totals + estimated USD cost (using config rates) for a job."""
+    t = totals(job)
+    t["cost_usd"] = estimate_cost(
+        t["input_tokens"], t["output_tokens"],
+        config.MODEL_INPUT_PRICE_PER_1M, config.MODEL_OUTPUT_PRICE_PER_1M,
+    )
+    return t

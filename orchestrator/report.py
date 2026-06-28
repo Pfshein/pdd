@@ -6,7 +6,7 @@ warning. Read-only over the job dir; no model calls.
 """
 import json
 
-from . import artifacts, events, state as state_mod
+from . import artifacts, events, state as state_mod, usage
 
 
 def _read_transitions(job: str) -> list:
@@ -129,6 +129,15 @@ def build_report(job: str) -> str:
             f"- pushed: {publish.get('pushed')}",
             f"- PR: {publish.get('pr_url') or '-'}",
         ]
+
+    u = usage.cost_summary(job)
+    if u["rows"]:
+        est = " (estimate)" if u["estimated"] else ""
+        out += ["", "## Usage",
+                f"- tokens: {u['input_tokens']} in / {u['output_tokens']} out / "
+                f"{u['total_tokens']} total{est}"]
+        if u["cost_usd"] is not None:  # omit entirely when no rates -> no bogus $0.00
+            out.append(f"- estimated cost: ${u['cost_usd']:.4f}{est}")
 
     # Escalation only matters for a needs-human outcome (a stale file from an
     # earlier run must not bleed into a later DONE report).

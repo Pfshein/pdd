@@ -105,3 +105,33 @@ def test_report_shows_terminal_reason_near_outcome(tmp_path, monkeypatch):
     assert "**Stop reason:** no_progress" in md
     # near the outcome: appears before the Timeline section
     assert md.index("Stop reason") < md.index("## Timeline")
+
+
+def test_report_shows_cost_when_rates_present(tmp_path, monkeypatch):
+    from orchestrator import usage
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(config, "MODEL_INPUT_PRICE_PER_1M", 1.0)
+    monkeypatch.setattr(config, "MODEL_OUTPUT_PRICE_PER_1M", 3.0)
+    st = state_mod.new_state("JOB-COST"); st["node"] = "DONE"; state_mod.save_state(st)
+    usage.record("JOB-COST", "CODER", prompt="x" * 4_000_000, result={"stdout": ""})
+
+    md = report.build_report("JOB-COST")
+
+    assert "## Usage" in md
+    assert "estimated cost: $" in md
+    assert "(estimate)" in md
+
+
+def test_report_omits_cost_when_no_rates(tmp_path, monkeypatch):
+    from orchestrator import usage
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(config, "MODEL_INPUT_PRICE_PER_1M", None)
+    monkeypatch.setattr(config, "MODEL_OUTPUT_PRICE_PER_1M", None)
+    st = state_mod.new_state("JOB-NOCOST"); st["node"] = "DONE"; state_mod.save_state(st)
+    usage.record("JOB-NOCOST", "CODER", prompt="x" * 40, result={"stdout": ""})
+
+    md = report.build_report("JOB-NOCOST")
+
+    assert "## Usage" in md            # tokens still shown
+    assert "estimated cost" not in md  # but no bogus $0.00
+    assert "$0.00" not in md
