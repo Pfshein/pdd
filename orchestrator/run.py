@@ -61,8 +61,9 @@ def _reset_job_logs(job: str) -> None:
 
 
 def run_pipeline(job, repo, *, task_md, task_meta, test_command=None, setup_command=None,
-                 base_ref="HEAD", keep_worktree=True) -> dict:
+                 base_ref="HEAD", keep_worktree=True, loop_profile=config.DEFAULT_LOOP_PROFILE) -> dict:
     _reset_job_logs(job)
+    profile = config.loop_profile(loop_profile)  # validates before touching git
     wt, branch, base_sha = worktree.create(repo, job, base_ref)
     events.record(
         job, "run_created", repo=str(repo), base_ref=base_ref,
@@ -77,6 +78,7 @@ def run_pipeline(job, repo, *, task_md, task_meta, test_command=None, setup_comm
         "worktree": str(wt),
         "test_command": test_command or config.TEST_COMMAND,
         "setup_command": setup_command if setup_command is not None else config.SETUP_COMMAND,
+        "loop_profile": loop_profile,
     })
     ctx = {
         "repo": str(repo),
@@ -86,7 +88,7 @@ def run_pipeline(job, repo, *, task_md, task_meta, test_command=None, setup_comm
         "test_command": test_command or config.TEST_COMMAND,
         "setup_command": setup_command if setup_command is not None else config.SETUP_COMMAND,
     }
-    st = state_mod.new_state(job)
+    st = state_mod.new_state(job, budgets=profile["budgets"], global_step_cap=profile["global_step_cap"])
     final = driver.run_job(st, stages.make_run_node(ctx), persist=True)
     events.record(job, "run_finished", node=final["node"], global_steps=final["global_steps"])
 
@@ -155,6 +157,8 @@ def main(argv=None) -> int:
     p.add_argument("--test-command", default=None)
     p.add_argument("--setup-command", default=None)
     p.add_argument("--base-ref", default="HEAD")
+    p.add_argument("--loop-profile", default=config.DEFAULT_LOOP_PROFILE,
+                   choices=sorted(config.LOOP_PROFILES))
     p.add_argument("--drop-worktree", action="store_true")
     args = p.parse_args(argv)
 
@@ -165,7 +169,7 @@ def main(argv=None) -> int:
         args.job, args.repo,
         task_md=task_md, task_meta=task_meta,
         test_command=args.test_command, setup_command=args.setup_command, base_ref=args.base_ref,
-        keep_worktree=not args.drop_worktree,
+        keep_worktree=not args.drop_worktree, loop_profile=args.loop_profile,
     )
     print(f"\n=== {args.job} finished at: {final['node']} ===")
     print(f"worktree: {worktree.worktree_path(args.job)}")

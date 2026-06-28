@@ -6,7 +6,7 @@ run_node is injected so the same loop drives stubs (tests) and real qwen.
 import time
 
 from . import config, events, state as state_mod, usage
-from .graph import is_terminal, NEEDS_HUMAN, REASON_COST_BUDGET
+from .graph import is_terminal, NEEDS_HUMAN, RETURN_TARGETS, REASON_COST_BUDGET
 from .router import decide_next
 
 
@@ -73,9 +73,14 @@ def run_job(job_state: dict, run_node, persist: bool = True) -> dict:
                 job_state["terminal_reason"] = REASON_COST_BUDGET
 
         if persist:
+            summary = _event_summary(result)
+            if nxt in RETURN_TARGETS:  # show the budget the loop is spending on this target
+                b = job_state["budgets"].get(nxt)
+                if b:
+                    summary["budget"] = f"{b['used']}/{b['max']}"
             events.record(
                 job, "stage_end", stage=node, duration_ms=duration_ms,
-                next=nxt, reason=reason, **_event_summary(result),
+                next=nxt, reason=reason, **summary,
             )
             events.record(job, "transition", frm=node, to=nxt, reason=reason)
             state_mod.record_transition(job, node, nxt, reason)

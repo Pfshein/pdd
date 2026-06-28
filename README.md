@@ -69,6 +69,10 @@ pdd reap            # dry-run чистки зависших джоб и прот
 pdd cleanup DEMO-1
 ```
 
+Бюджет цикла выбирается профилем: `pdd run ... --loop-profile conservative|standard|aggressive`
+(меньше/дефолт/больше ретраев и потолка шагов; по умолчанию `standard`, профиль пишется в
+`job_meta.json`).
+
 `intake-jira` работает с issue JSON, полученным любым способом (Jira export/MCP/REST), и пишет
 `task.md` + `task_meta.json`. Боевой Jira MCP позже должен только заменить источник JSON, а не
 формат артефактов.

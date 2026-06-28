@@ -135,3 +135,17 @@ def test_report_omits_cost_when_no_rates(tmp_path, monkeypatch):
     assert "## Usage" in md            # tokens still shown
     assert "estimated cost" not in md  # but no bogus $0.00
     assert "$0.00" not in md
+
+
+def test_report_has_loop_budget_section(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    st = state_mod.new_state("JOB-BUD")
+    st["node"] = "DONE"
+    st["budgets"]["CODER"]["used"] = 2
+    state_mod.save_state(st)
+
+    md = report.build_report("JOB-BUD")
+
+    assert "## Loop budget" in md
+    assert "CODER: 2/4 (used/max)" in md
+    assert md.isascii()  # ASCII-safe

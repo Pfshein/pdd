@@ -193,3 +193,29 @@ def test_cli_reap_defaults_to_dry_run(monkeypatch, capsys):
     assert cli.main(["reap", "--ttl", "10"]) == 0
     assert seen == {"dry_run": True, "ttl_s": 10}
     assert "would-reap" in capsys.readouterr().out
+
+
+def test_run_rejects_unknown_loop_profile(tmp_path):
+    import pytest
+    with pytest.raises(SystemExit):  # argparse choices reject before cmd_run
+        cli.main(["run", "--job", "J", "--repo", str(tmp_path),
+                  "--task", "t.md", "--meta", "m.json", "--loop-profile", "turbo"])
+
+
+def test_run_passes_loop_profile_through(tmp_path, monkeypatch):
+    task = tmp_path / "task.md"; task.write_text("t", encoding="utf-8")
+    meta = tmp_path / "meta.json"; meta.write_text("{}", encoding="utf-8")
+    seen = {}
+
+    def fake_pipeline(job, repo, **kw):
+        seen.update(kw)
+        return {"node": "DONE", "global_steps": 1, "global_step_cap": 18, "budgets": {}}
+
+    monkeypatch.setattr(cli.run_mod, "run_pipeline", fake_pipeline)
+
+    rc = cli.main(["run", "--job", "J", "--repo", str(tmp_path),
+                   "--task", str(task), "--meta", str(meta),
+                   "--loop-profile", "conservative", "--quiet"])
+
+    assert rc == 0
+    assert seen["loop_profile"] == "conservative"
