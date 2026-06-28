@@ -77,3 +77,31 @@ def test_jira_comment_draft_uses_report_and_escalation(tmp_path, monkeypatch, ca
     assert "Stopped at NEEDS_HUMAN" in out
     assert "# PDD report" in out
 
+
+
+def test_needs_human_comment_prefers_handoff_over_report():
+    comment = jira.needs_human_comment(
+        "PROJ-9", report_md="FULL REPORT BODY", reason="stopped",
+        handoff_md="CONCISE HANDOFF",
+    )
+    assert "CONCISE HANDOFF" in comment
+    assert "FULL REPORT BODY" not in comment
+    assert "Handoff:" in comment
+
+
+def test_needs_human_comment_falls_back_to_report():
+    comment = jira.needs_human_comment("PROJ-9", report_md="FULL REPORT", handoff_md="")
+    assert "FULL REPORT" in comment
+    assert "Report excerpt:" in comment
+
+
+def test_jira_comment_draft_prefers_handoff(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    state_mod.job_dir("PROJ-H")
+    artifacts.write_text("PROJ-H", "report.md", "# PDD report\nlong details")
+    artifacts.write_text("PROJ-H", "handoff.md", "# Handoff\nNext action: re-run")
+
+    assert cli.main(["jira-comment-draft", "PROJ-H"]) == 0
+    out = capsys.readouterr().out
+    assert "Next action: re-run" in out
+    assert "long details" not in out

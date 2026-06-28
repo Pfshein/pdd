@@ -45,6 +45,7 @@ def build_report(job: str) -> str:
     diff_text = artifacts.read_text(job, "diff.patch")
     security = artifacts.read_text(job, "SECURITY.txt").strip()
     escalation = artifacts.read_text(job, "escalation.md").strip()
+    handoff = artifacts.read_text(job, "handoff.md").strip()
     transitions = _read_transitions(job)
     attempts = state_mod.read_attempts(job)
     sandbox_audit = _read_jsonl_artifact(job, "sandbox_audit.jsonl")
@@ -145,9 +146,12 @@ def build_report(job: str) -> str:
         if u["cost_usd"] is not None:  # omit entirely when no rates -> no bogus $0.00
             out.append(f"- estimated cost: ${u['cost_usd']:.4f}{est}")
 
-    # Escalation only matters for a needs-human outcome (a stale file from an
-    # earlier run must not bleed into a later DONE report).
-    if escalation and st.get("node") == "NEEDS_HUMAN":
-        out += ["", "## Escalation", escalation]
+    # Needs-human detail (a stale file from an earlier run must not bleed into a
+    # later DONE report). Prefer the concise handoff; fall back to escalation.
+    if st.get("node") == "NEEDS_HUMAN":
+        if handoff:
+            out += ["", "## Handoff", handoff]
+        elif escalation:
+            out += ["", "## Escalation", escalation]
 
     return "\n".join(out) + "\n"

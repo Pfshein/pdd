@@ -106,14 +106,21 @@ def write_intake(issue: dict, out_dir) -> dict:
     return {"task": str(task_path), "meta": str(meta_path), "task_meta": meta}
 
 
-def needs_human_comment(job: str, report_md: str = "", reason: str = "") -> str:
-    """Draft a Jira comment for a NEEDS_HUMAN outcome."""
+def needs_human_comment(job: str, report_md: str = "", reason: str = "",
+                        handoff_md: str = "") -> str:
+    """Draft a Jira comment for a NEEDS_HUMAN outcome.
+
+    Prefers the concise handoff over the full report when available.
+    """
     lines = [
         f"PDD stopped and needs human input for `{job}`.",
     ]
     if reason:
         lines += ["", f"Reason: {reason}"]
-    if report_md:
+    handoff = handoff_md.strip()
+    if handoff:
+        lines += ["", "Handoff:", "```", handoff[:3000], "```"]
+    elif report_md:
         lines += ["", "Report excerpt:", "```", report_md[:3000], "```"]
     return "\n".join(lines) + "\n"
 

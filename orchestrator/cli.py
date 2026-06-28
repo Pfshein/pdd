@@ -247,7 +247,9 @@ def cmd_jira_comment_draft(args) -> int:
     job = state_mod.validate_job_id(args.job)
     report = artifacts.read_text(job, "report.md")
     escalation = artifacts.read_text(job, "escalation.md")
-    comment = jira.needs_human_comment(job, report_md=report, reason=escalation[:500])
+    handoff = artifacts.read_text(job, "handoff.md")
+    comment = jira.needs_human_comment(job, report_md=report, reason=escalation[:500],
+                                       handoff_md=handoff)
     if args.out:
         Path(args.out).write_text(comment, encoding="utf-8")
         print(f"jira comment draft written to {args.out}")
