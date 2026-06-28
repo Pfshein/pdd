@@ -112,3 +112,48 @@ def test_persistence_writes_artifacts(tmp_path, monkeypatch):
     assert rows[0]["event"] == "job_start"
     assert any(r["event"] == "stage_end" and r.get("stage") == g.TEST_RUN for r in rows)
     assert rows[-1]["event"] == "job_end"
+
+
+# --- Cost budget stop (PDD-34) --------------------------------------------
+def _intake_then_continue():
+    return {
+        g.INTAKE: [{"status": "ok"}],
+        g.TRIAGE: [{"triage": "simple"}],
+        g.CODER: [{"status": "ok"}],
+        g.CODE_REVIEW: [review([])],
+        g.TESTER: [{"status": "ok"}],
+        g.TEST_RUN: [{"test": {"status": "green"}}],
+        g.FINAL_REVIEW: [review([])],
+    }
+
+
+def test_cost_budget_stop_moves_to_needs_human(monkeypatch):
+    from orchestrator import config, usage
+    monkeypatch.setattr(config, "MAX_JOB_COST_USD", 1.0)
+    # deterministic: no real usage data needed
+    monkeypatch.setattr(usage, "cost_summary", lambda job: {"cost_usd": 5.0})
+
+    final = run_job(new_state("COST-1"), scripted_run_node(_intake_then_continue()), persist=False)
+
+    assert final["node"] == g.NEEDS_HUMAN
+    assert final["terminal_reason"] == g.REASON_COST_BUDGET
+
+
+def test_cost_stop_disabled_by_default(monkeypatch):
+    from orchestrator import config, usage
+    monkeypatch.setattr(config, "MAX_JOB_COST_USD", None)  # default
+    monkeypatch.setattr(usage, "cost_summary", lambda job: {"cost_usd": 999.0})
+
+    final = run_job(new_state("COST-OFF"), scripted_run_node(_intake_then_continue()), persist=False)
+
+    assert final["node"] == g.DONE  # high cost ignored when cap disabled
+
+
+def test_cost_stop_respects_cap_threshold(monkeypatch):
+    from orchestrator import config, usage
+    monkeypatch.setattr(config, "MAX_JOB_COST_USD", 10.0)
+    monkeypatch.setattr(usage, "cost_summary", lambda job: {"cost_usd": 2.0})  # under cap
+
+    final = run_job(new_state("COST-OK"), scripted_run_node(_intake_then_continue()), persist=False)
+
+    assert final["node"] == g.DONE
