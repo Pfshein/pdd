@@ -21,6 +21,7 @@ PER_RUN_ARTIFACTS = (
     "test_result.json",
     "setup_result.json",
     "escalation.md",
+    "handoff.md",
     "report.md",
     "publish.json",
     "SECURITY.txt",
@@ -49,6 +50,56 @@ def _write_escalation(job: str, final: dict) -> None:
         artifacts.compressed_attempts(job, limit=50) or "(none)",
     ]
     artifacts.write_text(job, "escalation.md", "\n".join(lines))
+
+
+# Suggested next human action keyed by the router's machine-readable stop reason.
+_NEXT_ACTION = {
+    graph.REASON_COST_BUDGET:
+        "Cost cap hit. Review scope, then raise PDD_MAX_JOB_COST_USD and re-run, "
+        "or finish the change manually.",
+    graph.REASON_GLOBAL_STEP_CAP:
+        "The loop hit the global step cap. Review the diff and either raise the cap "
+        "(or use --loop-profile aggressive) or finish manually.",
+    graph.REASON_NO_PROGRESS:
+        "The model repeated the same failure without progress. The task is likely "
+        "underspecified — clarify it and re-run, or fix manually.",
+    graph.REASON_BUDGET_EXHAUSTED:
+        "Stage retries were exhausted. Review the last verdict and diff, then finish "
+        "the change manually or re-run with a higher budget.",
+    graph.REASON_STAGE_ERROR:
+        "A stage errored. Check the error below and the report, fix the cause, re-run.",
+}
+
+
+def _next_action(reason: str) -> str:
+    return _NEXT_ACTION.get(reason, "Review the report and diff, then finish manually or re-run.")
+
+
+def _write_handoff(job: str, final: dict) -> None:
+    """Concise NEEDS_HUMAN handoff for an issue comment (handoff.md)."""
+    reason = final.get("terminal_reason") or "unknown"
+    verdict = artifacts.read_json(job, "verdict.json", {}) or {}
+    test = artifacts.read_json(job, "test_result.json", {}) or {}
+    lines = [
+        f"# Handoff: {job}",
+        "",
+        f"- Stopped at: {final['node']}",
+        f"- Stop reason: {reason}",
+        f"- Steps: {final['global_steps']}/{final['global_step_cap']}",
+        "",
+        "## Last verdict",
+    ]
+    issues = verdict.get("issues", [])
+    if issues:
+        for i in issues:
+            loc = f" ({i['location']})" if i.get("location") else ""
+            lines.append(f"- {i.get('class')}: {i.get('summary')}{loc}")
+    else:
+        lines.append("- (no blocking issues)")
+    if test.get("status") == "red" and (test.get("log_tail") or "").strip():
+        lines += ["", "## Last red test output", "```", test["log_tail"].strip()[-1500:], "```"]
+    lines += ["", "## Next action", _next_action(reason)]
+    artifacts.write_text(job, "handoff.md", "\n".join(lines) + "\n")
 
 
 def _reset_job_logs(job: str) -> None:
@@ -94,6 +145,7 @@ def run_pipeline(job, repo, *, task_md, task_meta, test_command=None, setup_comm
 
     if final["node"] == NEEDS_HUMAN:
         _write_escalation(job, final)
+        _write_handoff(job, final)
     if not keep_worktree:
         worktree.remove(repo, job)
     return final
@@ -124,6 +176,7 @@ def _drive(job: str, st: dict) -> dict:
     final = driver.run_job(st, stages.make_run_node(_ctx_from_artifacts(job, meta)), persist=True)
     if final["node"] == NEEDS_HUMAN:
         _write_escalation(job, final)
+        _write_handoff(job, final)
     return final
 
 

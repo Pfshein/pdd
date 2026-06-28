@@ -149,3 +149,33 @@ def test_report_has_loop_budget_section(tmp_path, monkeypatch):
     assert "## Loop budget" in md
     assert "CODER: 2/4 (used/max)" in md
     assert md.isascii()  # ASCII-safe
+
+
+def test_write_handoff_creates_concise_artifact(tmp_path, monkeypatch):
+    from orchestrator import run as run_mod, graph as g
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    state_mod.job_dir("JOB-HO")
+    artifacts.write_json("JOB-HO", "verdict.json", {"issues": [{"class": "logic_bug", "summary": "off by one"}]})
+    artifacts.write_json("JOB-HO", "test_result.json", {"status": "red", "log_tail": "AssertionError: 4 != 5"})
+    final = {"node": "NEEDS_HUMAN", "global_steps": 12, "global_step_cap": 30,
+             "terminal_reason": g.REASON_NO_PROGRESS}
+
+    run_mod._write_handoff("JOB-HO", final)
+
+    ho = artifacts.read_text("JOB-HO", "handoff.md")
+    assert "Stop reason: no_progress" in ho
+    assert "off by one" in ho
+    assert "AssertionError: 4 != 5" in ho          # red test tail
+    assert "## Next action" in ho and "underspecified" in ho
+
+
+def test_report_prefers_handoff_for_needs_human(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    st = state_mod.new_state("JOB-RH"); st["node"] = "NEEDS_HUMAN"; state_mod.save_state(st)
+    artifacts.write_text("JOB-RH", "escalation.md", "detailed escalation")
+    artifacts.write_text("JOB-RH", "handoff.md", "concise handoff")
+
+    md = report.build_report("JOB-RH")
+
+    assert "## Handoff" in md and "concise handoff" in md
+    assert "## Escalation" not in md
