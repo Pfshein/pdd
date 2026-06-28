@@ -320,7 +320,8 @@ def cmd_worker(args) -> int:
     from . import worker as worker_mod
 
     return worker_mod.run_worker(
-        once=args.once, poll_interval=args.poll_interval, worker=args.name
+        once=args.once, poll_interval=args.poll_interval, worker=args.name,
+        publish=args.publish, push=args.push,
     )
 
 
@@ -440,6 +441,8 @@ def build_parser() -> argparse.ArgumentParser:
     worker_p.add_argument("--poll-interval", type=float, default=5.0,
                           help="seconds between polls when idle (ignored with --once)")
     worker_p.add_argument("--name", default=None, help="worker id recorded in the lease")
+    worker_p.add_argument("--publish", action="store_true", help="publish jobs that reach DONE")
+    worker_p.add_argument("--push", action="store_true", help="with --publish, also push the branch")
     worker_p.set_defaults(func=cmd_worker)
 
     status_p = sub.add_parser("status", help="print job status")

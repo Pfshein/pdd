@@ -149,6 +149,19 @@ def mark_running(job: str, now: float | None = None) -> dict:
     return _set_status(job, RUNNING, now)
 
 
+def annotate(job: str, now: float | None = None, **fields) -> dict:
+    """Merge extra fields into a record (e.g. publish outcome). Status unchanged."""
+    now = time.time() if now is None else now
+    path = _record_path(job)
+    if not path.exists():
+        raise FileNotFoundError(f"no queue record for job {job!r}")
+    record = _read_record(path)
+    record.update(fields)
+    record["updated_ts"] = now
+    _write_record(record)
+    return record
+
+
 def release(job: str, status: str, now: float | None = None) -> dict:
     """Mark a final status and drop the lease."""
     if status not in TERMINAL_STATUSES:

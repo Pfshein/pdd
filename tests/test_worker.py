@@ -83,3 +83,70 @@ def test_worker_processes_one_then_stops_with_once(tmp_path, monkeypatch, capsys
     statuses = {r["job"]: r["status"] for r in queue.list_jobs()}
     assert statuses == {"A": queue.DONE, "B": queue.QUEUED}
     assert "A -> done" in capsys.readouterr().out
+
+
+# --- Auto publish on DONE (PDD-37) ----------------------------------------
+def test_publish_on_done_writes_outcome_to_queue(tmp_path, monkeypatch):
+    _patch_runs(tmp_path, monkeypatch)
+    _enqueue(tmp_path)
+    monkeypatch.setattr(run_mod, "run_pipeline", lambda *a, **k: {"node": "DONE"})
+    from orchestrator import publish as publish_mod
+    monkeypatch.setattr(publish_mod, "publish",
+                        lambda job, push=False: {"branch": f"pdd/{job}", "committed": "abc", "pushed": push})
+
+    result = worker.process_one(publish=True, push=True)
+
+    assert result["status"] == queue.DONE
+    assert result["publish"]["ok"] is True and result["publish"]["pushed"] is True
+    rec = queue.get("DEMO-1")
+    assert rec["status"] == queue.DONE          # status preserved
+    assert rec["publish"]["ok"] is True          # outcome recorded on the queue record
+
+
+def test_publish_failure_keeps_done_status(tmp_path, monkeypatch):
+    _patch_runs(tmp_path, monkeypatch)
+    _enqueue(tmp_path)
+    monkeypatch.setattr(run_mod, "run_pipeline", lambda *a, **k: {"node": "DONE"})
+    from orchestrator import publish as publish_mod
+
+    def boom(job, push=False):
+        raise publish_mod.PublishError("no worktree")
+
+    monkeypatch.setattr(publish_mod, "publish", boom)
+
+    result = worker.process_one(publish=True)
+
+    assert result["status"] == queue.DONE        # DONE not lost
+    assert result["publish"]["ok"] is False
+    assert "no worktree" in result["publish"]["error"]
+    assert queue.get("DEMO-1")["status"] == queue.DONE
+
+
+def test_publish_is_opt_in(tmp_path, monkeypatch):
+    _patch_runs(tmp_path, monkeypatch)
+    _enqueue(tmp_path)
+    monkeypatch.setattr(run_mod, "run_pipeline", lambda *a, **k: {"node": "DONE"})
+    from orchestrator import publish as publish_mod
+
+    def fail(*a, **k):
+        raise AssertionError("publish must not be called without --publish")
+
+    monkeypatch.setattr(publish_mod, "publish", fail)
+
+    result = worker.process_one()  # no publish flag
+
+    assert "publish" not in result
+
+
+def test_publish_skipped_for_needs_human(tmp_path, monkeypatch):
+    _patch_runs(tmp_path, monkeypatch)
+    _enqueue(tmp_path)
+    monkeypatch.setattr(run_mod, "run_pipeline", lambda *a, **k: {"node": "NEEDS_HUMAN"})
+    from orchestrator import publish as publish_mod
+    monkeypatch.setattr(publish_mod, "publish",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("not DONE")))
+
+    result = worker.process_one(publish=True)
+
+    assert result["status"] == queue.NEEDS_HUMAN
+    assert "publish" not in result
