@@ -188,6 +188,7 @@ def test_cli_reap_defaults_to_dry_run(monkeypatch, capsys):
         return [{"job": "JOB-OLD", "action": "would-reap"}]
 
     monkeypatch.setattr(reaper, "reap", fake_reap)
+    monkeypatch.setattr(reaper, "reap_queue", lambda **kwargs: [])  # isolate from real queue
 
     assert cli.main(["reap", "--ttl", "10"]) == 0
     assert seen == {"dry_run": True, "ttl_s": 10}
