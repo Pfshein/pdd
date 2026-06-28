@@ -18,6 +18,8 @@ from .graph import (
     INTAKE, TRIAGE, ARCHITECT, CODER, CODE_REVIEW, TESTER, TEST_RUN,
     FINAL_REVIEW, DONE, NEEDS_HUMAN, RETURN_TARGETS, BLOCKING_CLASSES,
     CLASS_TO_STAGE, highest_priority_class,
+    REASON_DONE, REASON_STAGE_ERROR, REASON_GLOBAL_STEP_CAP,
+    REASON_NO_PROGRESS, REASON_BUDGET_EXHAUSTED, REASON_UNKNOWN,
 )
 
 
@@ -28,17 +30,27 @@ def decide_next(node: str, result: dict, state: dict):
 
     intended, reason, complaint = _intended_next(node, result, s)
 
-    if intended in (DONE, NEEDS_HUMAN):
-        nxt, rsn = intended, reason
+    if intended == DONE:
+        nxt, rsn = DONE, reason
+    elif intended == NEEDS_HUMAN:
+        # A natural terminal from a stage (status:error / intake failed).
+        nxt, rsn = NEEDS_HUMAN, reason
+        s["terminal_reason"] = REASON_STAGE_ERROR
     elif s["global_steps"] >= s["global_step_cap"]:
         # Global ceiling: a natural terminal above was already allowed through.
         nxt, rsn = NEEDS_HUMAN, f"global_step_cap reached ({s['global_step_cap']})"
+        s["terminal_reason"] = REASON_GLOBAL_STEP_CAP
     elif intended in RETURN_TARGETS:
+        # _enter_return_target / _escalate set terminal_reason on their NEEDS_HUMAN exits.
         nxt, rsn = _enter_return_target(intended, result, s, reason, complaint)
     else:
         nxt, rsn = intended, reason
 
     s["node"] = nxt
+    if nxt == DONE:
+        s["terminal_reason"] = REASON_DONE
+    elif nxt == NEEDS_HUMAN and not s.get("terminal_reason"):
+        s["terminal_reason"] = REASON_UNKNOWN
     return nxt, rsn, s
 
 
@@ -100,6 +112,7 @@ def _enter_return_target(target: str, result: dict, s: dict, reason: str, compla
 
     # No-progress detector applies only to complaint loop-backs.
     if complaint and sig and sig in hist:
+        s["terminal_reason"] = REASON_NO_PROGRESS
         return NEEDS_HUMAN, f"no progress on {target} (repeated signature)"
 
     budget = s["budgets"].get(target)
@@ -122,6 +135,7 @@ def _escalate(target: str, result: dict, s: dict, complaint: bool):
         return _enter_return_target(
             ARCHITECT, result, s, "coder budget exhausted -> architect replan", complaint
         )
+    s["terminal_reason"] = REASON_BUDGET_EXHAUSTED
     if target == ARCHITECT:
         return NEEDS_HUMAN, "architect budget exhausted"
     if target == TESTER:

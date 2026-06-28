@@ -56,6 +56,8 @@ def build_report(job: str) -> str:
         f"- **Outcome:** {st.get('node', 'unknown')}",
         f"- **Steps:** {st.get('global_steps')}/{st.get('global_step_cap')}",
     ]
+    if st.get("terminal_reason"):
+        out.insert(3, f"- **Stop reason:** {st['terminal_reason']}")
     if meta.get("repo"):
         out.append(f"- **Repo:** {meta['repo']}")
     if meta.get("branch"):
