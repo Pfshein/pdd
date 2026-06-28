@@ -158,6 +158,11 @@ def release(job: str, status: str, now: float | None = None) -> dict:
     return _set_status(job, status, now, lease=None)
 
 
+def requeue(job: str, now: float | None = None) -> dict:
+    """Return a record to queued and drop its lease (e.g. after a stale lease)."""
+    return _set_status(job, QUEUED, now, lease=None)
+
+
 def is_stale(record: dict, now: float | None = None, ttl: float | None = None) -> bool:
     """True if a leased/running record's lease is older than ttl."""
     now = time.time() if now is None else now

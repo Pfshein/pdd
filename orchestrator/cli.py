@@ -211,11 +211,12 @@ def cmd_retry(args) -> int:
 def cmd_reap(args) -> int:
     from . import reaper
 
-    rows = reaper.reap(dry_run=not args.apply, ttl_s=args.ttl)
-    if not rows:
+    job_rows = reaper.reap(dry_run=not args.apply, ttl_s=args.ttl)
+    queue_rows = reaper.reap_queue(dry_run=not args.apply)
+    if not job_rows and not queue_rows:
         print("no stale jobs")
         return 0
-    print(json.dumps(rows, indent=2, ensure_ascii=False))
+    print(json.dumps({"jobs": job_rows, "queue": queue_rows}, indent=2, ensure_ascii=False))
     return 0
 
 

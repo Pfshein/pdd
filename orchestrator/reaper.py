@@ -8,9 +8,12 @@ import json
 import shutil
 import time
 
-from . import config, graph, state as state_mod, worktree
+from . import config, graph, queue, state as state_mod, worktree
 
 TERMINAL_NODES = {graph.DONE, graph.NEEDS_HUMAN}
+
+# A terminal pipeline node maps to a terminal queue status.
+_NODE_TO_QUEUE_STATUS = {graph.DONE: queue.DONE, graph.NEEDS_HUMAN: queue.NEEDS_HUMAN}
 
 
 def _safe_rmtree_worktree(job: str) -> bool:
@@ -47,6 +50,50 @@ def stale_jobs(*, now: float | None = None, ttl_s: int | None = None) -> list[di
         if st.get("node") not in TERMINAL_NODES and age_s >= ttl_s:
             out.append({"job": job, "node": st.get("node"), "age_s": int(age_s), "path": str(jd)})
     return out
+
+
+def _queue_status_from_state(job: str) -> str | None:
+    """If the job's persisted state is terminal, return the matching queue status.
+
+    Reads the path directly (no job_dir mkdir) to avoid creating empty dirs for
+    queue records whose pipeline never started.
+    """
+    state_path = config.RUNS_DIR / job / "state.json"
+    if not state_path.exists():
+        return None
+    try:
+        node = json.loads(state_path.read_text(encoding="utf-8")).get("node")
+    except (OSError, json.JSONDecodeError):
+        return None
+    return _NODE_TO_QUEUE_STATUS.get(node)
+
+
+def reap_queue(*, dry_run: bool = True, now: float | None = None,
+               ttl_s: int | None = None) -> list[dict]:
+    """Recover stale queue leases. One row per stale leased/running queue record.
+
+    A stale record whose job already reached a terminal state adopts that final
+    queue status (the worker finished but crashed before releasing); otherwise it
+    returns to `queued` so another worker can pick it up.
+    """
+    now = time.time() if now is None else now
+    ttl_s = config.QUEUE_LEASE_TTL_S if ttl_s is None else ttl_s
+    rows = []
+    for rec in queue.list_jobs():
+        if not queue.is_stale(rec, now=now, ttl=ttl_s):
+            continue
+        job = rec["job"]
+        final = _queue_status_from_state(job)
+        target = final or queue.QUEUED
+        row = {"job": job, "from": rec["status"], "to": target,
+               "action": "would-reap-queue" if dry_run else "reaped-queue"}
+        if not dry_run:
+            if final:
+                queue.release(job, final, now=now)
+            else:
+                queue.requeue(job, now=now)
+        rows.append(row)
+    return rows
 
 
 def reap(*, dry_run: bool = True, now: float | None = None, ttl_s: int | None = None) -> list[dict]:
