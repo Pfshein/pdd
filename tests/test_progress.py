@@ -1,5 +1,7 @@
 """Live console progress (PDD-19): event subscriptions + formatter + CLI wiring."""
-from orchestrator import cli, config, events, progress
+import io
+
+from orchestrator import artifacts, cli, config, events, progress, queue
 
 
 def test_events_subscribe_and_unsubscribe(tmp_path, monkeypatch):
@@ -72,6 +74,62 @@ def test_cli_run_quiet_suppresses_progress(tmp_path, monkeypatch, capsys):
     cli.main(["run", "--job", "JQ", "--repo", str(tmp_path),
               "--task", str(task), "--meta", str(meta), "--quiet"])
     assert "ok CODER" not in capsys.readouterr().err
+
+
+def test_cli_worker_streams_progress_and_publish_to_stderr(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    repo = tmp_path / "repo"; repo.mkdir()
+    task = tmp_path / "task.md"; task.write_text("t", encoding="utf-8")
+    meta = tmp_path / "meta.json"; meta.write_text("{}", encoding="utf-8")
+    queue.enqueue("JW", repo=str(repo), task=str(task), meta=str(meta))
+
+    def fake_pipeline(job, repo, **kw):
+        artifacts.write_text(job, "plan.md", "Plan:\n- do the worker thing")
+        events.record(job, "stage_end", stage="ARCHITECT", duration_ms=5, next="CODER", status="ok")
+        events.record(job, "stage_start", stage="CODER")
+        events.record(job, "stage_end", stage="CODER", duration_ms=10, next="CODE_REVIEW", status="ok")
+        events.record(job, "job_end", node="DONE")
+        return {"node": "DONE"}
+
+    monkeypatch.setattr(cli.run_mod, "run_pipeline", fake_pipeline)
+    from orchestrator import publish as publish_mod
+    monkeypatch.setattr(
+        publish_mod, "publish",
+        lambda job, push=False: {"branch": f"pdd/{job}", "committed": "abc", "pushed": push},
+    )
+
+    assert cli.main(["worker", "--once", "--publish"]) == 0
+
+    captured = capsys.readouterr()
+    assert "worker: JW -> done" in captured.out
+    assert "JW: worker started" in captured.err
+    assert "ARCHITECT -> CODER (plan.md)" in captured.err
+    assert "| - do the worker thing" in captured.err
+    assert ".. CODER running" in captured.err
+    assert "ok CODER" in captured.err
+    assert ".. publish running" in captured.err
+    assert "ok publish" in captured.err
+
+
+def test_console_printer_logs_architect_plan_passed_to_coder(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    artifacts.write_text("JPLAN", "plan.md", "Plan:\n- edit dashboard\n- add tests")
+    stream = io.StringIO()
+    printer = progress.console_printer(stream=stream)
+
+    printer({
+        "event": "stage_end",
+        "job": "JPLAN",
+        "stage": "ARCHITECT",
+        "duration_ms": 1200,
+        "next": "CODER",
+        "status": "ok",
+    })
+
+    out = stream.getvalue()
+    assert "ok ARCHITECT" in out
+    assert "ARCHITECT -> CODER (plan.md)" in out
+    assert "| - edit dashboard" in out
 
 
 def test_format_event_shows_budget_on_return_target():

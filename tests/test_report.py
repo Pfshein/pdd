@@ -68,6 +68,31 @@ def test_events_section(tmp_path, monkeypatch):
     assert "stage_end stage=TEST_RUN 42ms reason=tests green" in md
 
 
+def test_stage_error_section_includes_diagnostic_artifact(tmp_path, monkeypatch):
+    _seed("JOB-STAGE-ERR", monkeypatch, tmp_path)
+    artifacts.write_json("JOB-STAGE-ERR", "stage_error.json", {
+        "stage": "CODER",
+        "error": "qwen budget exceeded (exit 55; qwen did not report which limit)",
+        "exit_code": 55,
+        "timed_out": False,
+        "limit": "unknown",
+        "stderr_tail": "FatalBudgetExceededError",
+        "stdout_tail": "",
+    })
+    state_mod.record_attempt(
+        "JOB-STAGE-ERR", "CODER", "CODER failed", None,
+        status="error", error="qwen budget exceeded (exit 55; qwen did not report which limit)",
+    )
+
+    md = report.build_report("JOB-STAGE-ERR")
+
+    assert "## Stage error" in md
+    assert "stage: **CODER**" in md
+    assert "exit: 55" in md
+    assert "FatalBudgetExceededError" in md
+    assert "error: qwen budget exceeded" in md
+
+
 def test_escalation_only_for_needs_human(tmp_path, monkeypatch):
     _seed("JOB-ESC", monkeypatch, tmp_path)  # node == DONE
     artifacts.write_text("JOB-ESC", "escalation.md", "stale escalation")

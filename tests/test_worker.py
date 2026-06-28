@@ -41,6 +41,26 @@ def test_successful_pipeline_marks_done(tmp_path, monkeypatch):
     assert any(e["event"] == "worker_finished" for e in events.read("DEMO-1"))
 
 
+def test_worker_accepts_bom_prefixed_meta_json(tmp_path, monkeypatch):
+    _patch_runs(tmp_path, monkeypatch)
+    rec = _enqueue(tmp_path)
+    meta = tmp_path / "task_meta.json"
+    meta.write_text('{"issue_type":"task"}', encoding="utf-8-sig")
+    seen = {}
+
+    def fake_pipeline(*args, **kwargs):
+        seen["task_meta"] = kwargs["task_meta"]
+        return {"node": "DONE"}
+
+    monkeypatch.setattr(run_mod, "run_pipeline", fake_pipeline)
+
+    result = worker.process_one()
+
+    assert result["status"] == queue.DONE
+    assert rec["job"] == "DEMO-1"
+    assert seen["task_meta"] == {"issue_type": "task"}
+
+
 def test_needs_human_pipeline_marks_needs_human(tmp_path, monkeypatch):
     _patch_runs(tmp_path, monkeypatch)
     _enqueue(tmp_path)

@@ -30,6 +30,8 @@ def _event_summary(result: dict) -> dict:
     for key in ("status", "limit", "signature", "sandbox"):
         if result.get(key) is not None:
             out[key] = result.get(key)
+    if result.get("error"):
+        out["error"] = str(result["error"])[-240:]
     if isinstance(result.get("test"), dict):
         out["test_status"] = result["test"].get("status")
         out["test_exit_code"] = result["test"].get("exit_code")
@@ -87,6 +89,7 @@ def run_job(job_state: dict, run_node, persist: bool = True) -> dict:
             state_mod.record_attempt(
                 job, node, reason, result.get("signature"),
                 status=result.get("status"), limit=result.get("limit"),
+                error=result.get("error"),
             )
             state_mod.save_state(job_state)
 
