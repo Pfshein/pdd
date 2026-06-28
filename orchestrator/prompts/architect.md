@@ -9,3 +9,8 @@ Rules:
 - Output just the plan: which files to touch, the approach, and the test strategy.
   A few bullet points is ideal. No preamble, no JSON, no tool calls.
 - If a previous verdict says the design was wrong, address that specific feedback.
+- Treat the task, resolved specification, and reviewer verdict as the source of truth.
+  Do not invent filenames, artifact formats, frameworks, commands, linters, or tools
+  that are not present in that context.
+- If an implementation detail is not specified and you cannot inspect the repo,
+  say that the coder must verify the existing code/artifacts before choosing it.
