@@ -54,7 +54,7 @@ def _print_path(label: str, path: Path) -> None:
 def cmd_run(args) -> int:
     repo = args.repo or os.getcwd()  # default to the current directory
     task_md = Path(args.task).read_text(encoding="utf-8")
-    task_meta = json.loads(Path(args.meta).read_text(encoding="utf-8"))
+    task_meta = artifacts.read_user_json(args.meta)
     with _live_progress(not args.quiet):
         final = run_mod.run_pipeline(
             args.job,
@@ -321,10 +321,11 @@ def cmd_queue(args) -> int:
 def cmd_worker(args) -> int:
     from . import worker as worker_mod
 
-    return worker_mod.run_worker(
-        once=args.once, poll_interval=args.poll_interval, worker=args.name,
-        publish=args.publish, push=args.push,
-    )
+    with _live_progress():
+        return worker_mod.run_worker(
+            once=args.once, poll_interval=args.poll_interval, worker=args.name,
+            publish=args.publish, push=args.push,
+        )
 
 
 def _run_command(argv: list[str]) -> int:

@@ -23,6 +23,7 @@ PER_RUN_ARTIFACTS = (
     "escalation.md",
     "handoff.md",
     "report.md",
+    "stage_error.json",
     "publish.json",
     "SECURITY.txt",
     "reaped.json",
@@ -216,7 +217,7 @@ def main(argv=None) -> int:
     args = p.parse_args(argv)
 
     task_md = open(args.task, encoding="utf-8").read()
-    task_meta = json.load(open(args.meta, encoding="utf-8"))
+    task_meta = artifacts.read_user_json(args.meta)
 
     final = run_pipeline(
         args.job, args.repo,

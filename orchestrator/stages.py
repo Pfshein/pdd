@@ -50,10 +50,35 @@ def _stage_error(res: dict, fallback: str = "stage failed") -> str:
         return "tool-call budget exceeded (agent stuck in a tool loop)"
     if res.get("limit") == "wall_time":
         return "wall-time budget exceeded even after a longer retry (too slow)"
+    if res.get("exit_code") == runner.QWEN_EXIT_LIMIT:
+        return "qwen budget exceeded (exit 55; qwen did not report which limit)"
     stderr = (res.get("stderr") or "").strip()
     if stderr:
         return stderr[-1000:]
     return fallback
+
+
+def _redact_model_secrets(text: str) -> str:
+    out = text or ""
+    for value in config.model_env().values():
+        if value:
+            out = out.replace(value, "<redacted>")
+    return out
+
+
+def _record_stage_error(job: str, node: str, res: dict, error: str) -> None:
+    """Persist a compact diagnostic artifact for the terminal stage failure."""
+    artifacts.write_json(job, "stage_error.json", {
+        "stage": node,
+        "error": error,
+        "exit_code": res.get("exit_code"),
+        "timed_out": res.get("timed_out"),
+        "limit": res.get("limit"),
+        "sandbox": res.get("sandbox"),
+        "container": res.get("container"),
+        "stdout_tail": _redact_model_secrets(res.get("stdout", ""))[-4000:],
+        "stderr_tail": _redact_model_secrets(res.get("stderr", ""))[-4000:],
+    })
 
 
 def _run_structured(role: str, sections: dict, schema_file: str, job: str, node: str):
@@ -135,6 +160,7 @@ def _architect(job: str, ctx: dict) -> dict:
     res = _run_freeform("architect", sections, job, ARCHITECT)
     if _process_failed(res):
         err = _stage_error(res)
+        _record_stage_error(job, ARCHITECT, res, err)
         artifacts.write_text(job, "plan.md", f"(architect failed: {err})")
         return {"status": "error", "error": err}
     plan = _last_assistant_text(res["stdout"]).strip()
@@ -157,7 +183,9 @@ def _coder(job: str, ctx: dict) -> dict:
     if res.get("sandbox") == "UNSANDBOXED":
         sandbox.record_unsandboxed_override(job, CODER)
     if _process_failed(res):
-        return {"status": "error", "error": _stage_error(res), "signature": None}
+        err = _stage_error(res)
+        _record_stage_error(job, CODER, res, err)
+        return {"status": "error", "error": err, "signature": None}
     artifacts.write_text(job, "changes.md", _last_assistant_text(res["stdout"]))
     return {"status": "ok"}
 
@@ -180,6 +208,7 @@ def _review(job: str, ctx: dict, node: str) -> dict:
         if obj is not None:
             err = None
     if obj is None:
+        _record_stage_error(job, node, res or {}, err or "review stage failed")
         artifacts.write_json(job, "verdict.json", {"issues": [], "_stage_error": err})
         return {"status": "error", "error": err, "signature": None}
     verdict.validate_verdict(obj)
@@ -201,7 +230,9 @@ def _tester(job: str, ctx: dict) -> dict:
     if res.get("sandbox") == "UNSANDBOXED":
         sandbox.record_unsandboxed_override(job, TESTER)
     if _process_failed(res):
-        return {"status": "error", "error": _stage_error(res), "signature": None}
+        err = _stage_error(res)
+        _record_stage_error(job, TESTER, res, err)
+        return {"status": "error", "error": err, "signature": None}
     return {"status": "ok"}
 
 

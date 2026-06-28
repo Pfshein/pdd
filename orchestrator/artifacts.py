@@ -36,6 +36,11 @@ def read_json(job: str, name: str, default=None):
     return json.loads(p.read_text(encoding="utf-8"))
 
 
+def read_user_json(path: str | Path):
+    """Read user-supplied JSON, accepting UTF-8 files with or without a BOM."""
+    return json.loads(Path(path).read_text(encoding="utf-8-sig"))
+
+
 def exists(job: str, name: str) -> bool:
     return path(job, name).exists()
 

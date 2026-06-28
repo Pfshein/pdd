@@ -9,7 +9,6 @@ events.jsonl.
 Note: run_pipeline resets per-run artifacts (including events.jsonl) at its start,
 so worker events are recorded AFTER the run — otherwise they would be wiped.
 """
-import json
 import time
 from pathlib import Path
 
@@ -25,7 +24,7 @@ NODE_TO_STATUS = {DONE: queue.DONE, NEEDS_HUMAN: queue.NEEDS_HUMAN}
 def _run_record(rec: dict) -> dict:
     """Read the task files referenced by the queue record and run the pipeline."""
     task_md = Path(rec["task"]).read_text(encoding="utf-8")
-    task_meta = json.loads(Path(rec["meta"]).read_text(encoding="utf-8"))
+    task_meta = artifacts.read_user_json(rec["meta"])
     return run_mod.run_pipeline(
         rec["job"],
         rec["repo"],
@@ -41,6 +40,7 @@ def _publish(job: str, push: bool = False) -> dict:
     """Publish a DONE job. A publish failure is reported, never undoes DONE."""
     from . import publish as publish_mod
 
+    events.record(job, "worker_publish_start", push=push)
     try:
         res = publish_mod.publish(job, push=push)
         events.record(job, "worker_published", branch=res.get("branch"),
@@ -65,6 +65,7 @@ def process_one(worker: str | None = None, publish: bool = False,
         return None
     job = rec["job"]
     queue.mark_running(job)
+    events.record(job, "worker_started", worker=worker, publish=publish, push=push)
     try:
         final = _run_record(rec)
     except Exception as exc:  # infra failure: release so the job is never stuck leased

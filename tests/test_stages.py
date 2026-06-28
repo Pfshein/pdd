@@ -46,6 +46,34 @@ def test_architect_process_failure_is_error(tmp_path, monkeypatch):
     assert res["status"] == "error"
 
 
+def test_coder_exit_55_writes_stage_error_artifact(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(stages.worktree, "worktree_path", lambda job: tmp_path)
+    artifacts.write_text("J-CODER55", "task.md", "x")
+    artifacts.write_text("J-CODER55", "plan.md", "p")
+    monkeypatch.setattr(
+        runner, "run_qwen_stage",
+        lambda *a, **k: {
+            "exit_code": 55,
+            "stdout": "",
+            "stderr": "",
+            "timed_out": False,
+            "limit": "unknown",
+            "sandbox": "docker",
+            "container": "pdd-x",
+        },
+    )
+
+    res = stages._coder("J-CODER55", {})
+
+    assert res["status"] == "error"
+    assert "exit 55" in res["error"]
+    detail = artifacts.read_json("J-CODER55", "stage_error.json")
+    assert detail["stage"] == "CODER"
+    assert detail["exit_code"] == 55
+    assert detail["container"] == "pdd-x"
+
+
 def test_review_salvages_plain_text_verdict(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
     monkeypatch.setattr(stages.worktree, "worktree_path", lambda job: tmp_path)

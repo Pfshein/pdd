@@ -41,6 +41,7 @@ def build_report(job: str) -> str:
     st = artifacts.read_json(job, "state.json", {}) or {}
     verdict = artifacts.read_json(job, "verdict.json", {}) or {}
     test = artifacts.read_json(job, "test_result.json", {}) or {}
+    stage_error = artifacts.read_json(job, "stage_error.json", {}) or {}
     publish = artifacts.read_json(job, "publish.json", {}) or {}
     diff_text = artifacts.read_text(job, "diff.patch")
     security = artifacts.read_text(job, "SECURITY.txt").strip()
@@ -86,6 +87,21 @@ def build_report(job: str) -> str:
             tags = " ".join(f"{k}={a[k]}" for k in ("status", "limit") if a.get(k))
             suffix = f"  _[{tags}]_" if tags else ""
             out.append(f"- **{a.get('stage')}**: {a.get('note')}{suffix}")
+            if a.get("error"):
+                out.append(f"  - error: {a.get('error')}")
+
+    if stage_error:
+        out += ["", "## Stage error"]
+        out.append(f"- stage: **{stage_error.get('stage')}**")
+        out.append(f"- error: {stage_error.get('error')}")
+        out.append(
+            f"- exit: {stage_error.get('exit_code')}, timed_out={stage_error.get('timed_out')}, "
+            f"limit={stage_error.get('limit') or '-'}"
+        )
+        if (stage_error.get("stderr_tail") or "").strip():
+            out += ["", "### stderr tail", "```", stage_error["stderr_tail"].strip()[-1500:], "```"]
+        if (stage_error.get("stdout_tail") or "").strip():
+            out += ["", "### stdout tail", "```", stage_error["stdout_tail"].strip()[-1500:], "```"]
 
     if sandbox_audit:
         out += ["", "## Sandbox audit"]
