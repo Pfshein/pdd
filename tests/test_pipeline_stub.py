@@ -93,6 +93,7 @@ def test_pipeline_reaches_done(tmp_path, monkeypatch):
     assert job_meta["branch"] == "pdd/JOB-X"
     assert job_meta["base_sha"]
     assert job_meta["setup_command"] == "pip install -r requirements.txt"
+    assert job_meta["loop_profile"] == "standard"  # default profile recorded
     assert (jd / "diff.patch").read_text(encoding="utf-8").find("a + b") != -1
     assert json.loads((jd / "test_result.json").read_text(encoding="utf-8"))["status"] == "green"
     # usage recorded per stage (estimate source, since the stub carries no usage)

@@ -28,6 +28,24 @@ DEFAULT_BUDGETS = {
 # How many recent signatures to remember per target for the no-progress detector.
 SIGNATURE_HISTORY = 3
 
+# --- Loop policy profiles (named budget/cap bundles; default = standard) ---
+# standard == current defaults. conservative spends less (fewer retries, lower
+# cap); aggressive spends more. Selected per run via `pdd run --loop-profile`.
+LOOP_PROFILES = {
+    "conservative": {"budgets": {"ARCHITECT": 1, "CODER": 2, "TESTER": 2}, "global_step_cap": 18},
+    "standard": {"budgets": dict(DEFAULT_BUDGETS), "global_step_cap": GLOBAL_STEP_CAP},
+    "aggressive": {"budgets": {"ARCHITECT": 3, "CODER": 6, "TESTER": 4}, "global_step_cap": 45},
+}
+DEFAULT_LOOP_PROFILE = "standard"
+
+
+def loop_profile(name: str) -> dict:
+    """Resolve a named profile to {budgets, global_step_cap}. Raises on unknown."""
+    if name not in LOOP_PROFILES:
+        raise ValueError(f"unknown loop profile {name!r}; choose from {sorted(LOOP_PROFILES)}")
+    p = LOOP_PROFILES[name]
+    return {"budgets": dict(p["budgets"]), "global_step_cap": p["global_step_cap"]}
+
 # --- Process lifecycle ----------------------------------------------------
 # Inner guard handed to qwen (--max-wall-time, seconds).
 STAGE_WALL_TIME_S = 600

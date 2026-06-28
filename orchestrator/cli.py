@@ -65,6 +65,7 @@ def cmd_run(args) -> int:
             setup_command=args.setup_command,
             base_ref=args.base_ref,
             keep_worktree=not args.drop_worktree,
+            loop_profile=args.loop_profile,
         )
     print(f"\n=== {args.job} finished at: {final['node']} ===")
     print(f"branch:    pdd/{args.job}  (lives in the job checkout, not your repo)")
@@ -402,6 +403,9 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--test-command", default=None)
     run_p.add_argument("--setup-command", default=None, help="dependency install command before TEST_RUN")
     run_p.add_argument("--base-ref", default="HEAD")
+    run_p.add_argument("--loop-profile", default=config.DEFAULT_LOOP_PROFILE,
+                       choices=sorted(config.LOOP_PROFILES),
+                       help=f"budget/cap profile (default: {config.DEFAULT_LOOP_PROFILE})")
     run_p.add_argument("--drop-worktree", action="store_true")
     run_p.add_argument("--quiet", action="store_true", help="suppress live stage progress")
     run_p.set_defaults(func=cmd_run)

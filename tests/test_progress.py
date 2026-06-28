@@ -72,3 +72,11 @@ def test_cli_run_quiet_suppresses_progress(tmp_path, monkeypatch, capsys):
     cli.main(["run", "--job", "JQ", "--repo", str(tmp_path),
               "--task", str(task), "--meta", str(meta), "--quiet"])
     assert "ok CODER" not in capsys.readouterr().err
+
+
+def test_format_event_shows_budget_on_return_target():
+    line = progress.format_event(
+        {"event": "stage_end", "stage": "CODE_REVIEW", "duration_ms": 1200,
+         "next": "CODER", "status": "ok", "budget": "2/4"}
+    )
+    assert "-> CODER" in line and "budget=2/4" in line

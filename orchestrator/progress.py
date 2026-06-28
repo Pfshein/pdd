@@ -6,7 +6,7 @@ so stdout stays clean for the final summary.
 """
 import sys
 
-_FIELDS = ("status", "test_status", "test_exit_code", "issues", "limit", "sandbox")
+_FIELDS = ("status", "test_status", "test_exit_code", "issues", "limit", "sandbox", "budget")
 
 
 def format_event(row: dict):

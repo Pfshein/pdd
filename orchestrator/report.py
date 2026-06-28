@@ -67,6 +67,12 @@ def build_report(job: str) -> str:
     if security:
         out += ["", "## (!) Security warnings", "```", security, "```"]
 
+    budgets = st.get("budgets") or {}
+    budget_rows = [(stg, budgets[stg]) for stg in ("ARCHITECT", "CODER", "TESTER") if budgets.get(stg)]
+    if budget_rows:
+        out += ["", "## Loop budget"]
+        out += [f"- {stg}: {b.get('used', 0)}/{b.get('max', 0)} (used/max)" for stg, b in budget_rows]
+
     out += ["", "## Timeline"]
     if transitions:
         out += [f"- `{t.get('from')}` -> `{t.get('to')}`: {t.get('reason')}" for t in transitions]
