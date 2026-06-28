@@ -55,6 +55,19 @@ ORDER = {
 }
 
 
+# --- Machine-readable terminal reasons (router sets one on every terminal hop) -
+REASON_DONE = "done"
+REASON_STAGE_ERROR = "stage_error"
+REASON_GLOBAL_STEP_CAP = "global_step_cap"
+REASON_NO_PROGRESS = "no_progress"
+REASON_BUDGET_EXHAUSTED = "budget_exhausted"
+REASON_UNKNOWN = "unknown"
+TERMINAL_REASONS = frozenset({
+    REASON_DONE, REASON_STAGE_ERROR, REASON_GLOBAL_STEP_CAP,
+    REASON_NO_PROGRESS, REASON_BUDGET_EXHAUSTED, REASON_UNKNOWN,
+})
+
+
 def is_terminal(node: str) -> bool:
     return node in TERMINAL
 

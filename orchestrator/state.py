@@ -37,6 +37,7 @@ def new_state(job: str, budgets: dict | None = None, global_step_cap: int | None
         "signatures": {stage: [] for stage in budgets},
         "has_plan": False,
         "nits": [],
+        "terminal_reason": None,  # set by the router on the terminal hop (graph.REASON_*)
     }
 
 

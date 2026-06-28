@@ -177,3 +177,47 @@ def test_input_state_not_mutated():
     snapshot = deepcopy(s)
     decide_next(g.TRIAGE, {"triage": "simple"}, s)
     assert s == snapshot  # pure function
+
+
+# --- Machine-readable terminal reasons (PDD-29) ---------------------------
+def test_done_sets_terminal_reason_done():
+    _, _, s = decide_next(g.FINAL_REVIEW, review([]), base_state())
+    assert s["node"] == g.DONE
+    assert s["terminal_reason"] == g.REASON_DONE
+
+
+def test_stage_error_sets_terminal_reason_stage_error():
+    _, _, s = decide_next(g.CODE_REVIEW, {"status": "error"}, base_state())
+    assert s["terminal_reason"] == g.REASON_STAGE_ERROR
+
+
+def test_global_step_cap_sets_terminal_reason():
+    s = base_state()
+    s["global_step_cap"] = 5
+    s["global_steps"] = 5
+    _, _, ns = decide_next(g.CODER, {"status": "ok"}, s)
+    assert ns["terminal_reason"] == g.REASON_GLOBAL_STEP_CAP
+
+
+def test_no_progress_and_budget_are_distinguishable():
+    # no-progress: repeated signature
+    s = base_state()
+    s["signatures"]["CODER"] = ["dup"]
+    _, _, ns = decide_next(
+        g.CODE_REVIEW, review([{"class": "logic_bug", "summary": "x"}], signature="dup"), s
+    )
+    assert ns["terminal_reason"] == g.REASON_NO_PROGRESS
+
+    # budget exhausted: coder + architect both at max
+    s2 = base_state({"ARCHITECT": 1, "CODER": 1, "TESTER": 3})
+    s2["budgets"]["CODER"]["used"] = 1
+    s2["budgets"]["ARCHITECT"]["used"] = 1
+    _, _, ns2 = decide_next(g.CODE_REVIEW, review([{"class": "logic_bug", "summary": "x"}]), s2)
+    assert ns2["terminal_reason"] == g.REASON_BUDGET_EXHAUSTED
+    assert ns["terminal_reason"] != ns2["terminal_reason"]  # acceptance: distinguishable
+
+
+def test_non_terminal_hop_leaves_terminal_reason_none():
+    _, _, s = decide_next(g.CODER, {"status": "ok"}, base_state())
+    assert s["node"] == g.CODE_REVIEW
+    assert s["terminal_reason"] is None

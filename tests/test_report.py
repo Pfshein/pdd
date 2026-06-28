@@ -91,3 +91,17 @@ def test_cli_report_writes_artifact(tmp_path, monkeypatch, capsys):
 def test_cli_report_missing_job(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
     assert cli.main(["report", "NOPE"]) == 2
+
+
+def test_report_shows_terminal_reason_near_outcome(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
+    st = state_mod.new_state("JOB-TR")
+    st["node"] = "NEEDS_HUMAN"
+    st["terminal_reason"] = "no_progress"
+    state_mod.save_state(st)
+
+    md = report.build_report("JOB-TR")
+
+    assert "**Stop reason:** no_progress" in md
+    # near the outcome: appears before the Timeline section
+    assert md.index("Stop reason") < md.index("## Timeline")
