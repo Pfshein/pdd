@@ -9,7 +9,7 @@ ctx = {repo, base_sha, task_md, task_meta, test_command, setup_command}
 """
 import json
 
-from . import artifacts, config, runner, sandbox, testrun, triage, verdict, worktree
+from . import artifacts, config, runner, sandbox, testrun, triage, usage, verdict, worktree
 from .graph import (
     INTAKE, TRIAGE, ARCHITECT, CODER, CODE_REVIEW, TESTER, TEST_RUN, FINAL_REVIEW,
 )
@@ -67,6 +67,7 @@ def _run_structured(role: str, sections: dict, schema_file: str, job: str, node:
         max_tool_calls=config.STAGE_EXPLORE_MAX_TOOL_CALLS,
         extra=["--exclude-tools", EXCLUDE_EXPLORE],
     )
+    usage.record(job, node, prompt, res)
     if _process_failed(res):
         return None, _stage_error(res), res
     obj, err = verdict.extract_structured(res["stdout"])
@@ -81,7 +82,7 @@ def _run_freeform(role: str, sections: dict, job: str, node: str):
     we let it think and capture the assistant text.
     """
     prompt = artifacts.build_prompt(role, sections)
-    return runner.run_qwen_stage(
+    res = runner.run_qwen_stage(
         prompt,
         cwd=worktree.worktree_path(job),
         output_format="json",
@@ -89,12 +90,14 @@ def _run_freeform(role: str, sections: dict, job: str, node: str):
         max_tool_calls=config.STAGE_EXPLORE_MAX_TOOL_CALLS,
         extra=["--exclude-tools", EXCLUDE_EXPLORE],
     )
+    usage.record(job, node, prompt, res)
+    return res
 
 
 def _run_editor(role: str, sections: dict, job: str, node: str):
     # Executing stage: edits files + runs shell under --yolo -> MUST be isolated.
     prompt = artifacts.build_prompt(role, sections)
-    return runner.run_qwen_stage(
+    res = runner.run_qwen_stage(
         prompt,
         cwd=worktree.worktree_path(job),
         isolate=True,
@@ -104,6 +107,8 @@ def _run_editor(role: str, sections: dict, job: str, node: str):
         job=job,
         stage=node,
     )
+    usage.record(job, node, prompt, res)
+    return res
 
 
 # --- Individual stages ----------------------------------------------------
